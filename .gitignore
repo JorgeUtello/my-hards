@@ -2,4 +2,6 @@ __pycache__/
 *.pyc
 *.pyo
 config.json
+cert.pem
+key.pem
 .env

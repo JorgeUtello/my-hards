@@ -10,6 +10,9 @@ detection (when idle) and keyboard/click/scroll forwarding.
 
 import ctypes
 import ctypes.wintypes as wintypes
+import hashlib
+import hmac
+import os
 import socket
 import sys
 import threading
@@ -19,8 +22,9 @@ import logging
 from pynput import mouse, keyboard
 from pynput.mouse import Controller as MouseController
 
-from protocol import MessageType, encode_message, recv_message
-from config import load_config
+from protocol import (MessageType, encode_message, recv_message,
+                      ensure_certs, create_tls_context_server)
+from config import load_config, CERT_FILE, KEY_FILE
 from input_utils import get_screen_size, is_at_edge, lock_cursor_to_edge, opposite_edge
 
 logging.basicConfig(
@@ -75,16 +79,41 @@ class Server:
 
     def start(self):
         """Start the server: listen for a client, then capture input."""
+        ensure_certs(CERT_FILE, KEY_FILE)
+        tls_ctx = create_tls_context_server(CERT_FILE, KEY_FILE)
+
         srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         srv.bind(("0.0.0.0", self.port))
         srv.listen(1)
-        log.info("Waiting for client on port %d ...", self.port)
+        log.info("Waiting for client on port %d (TLS + auth) ...", self.port)
 
-        conn, addr = srv.accept()
-        conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        # Accept loop — reject unauthenticated connections and keep waiting
+        conn = None
+        while self.running:
+            try:
+                raw_conn, addr = srv.accept()
+            except OSError:
+                break
+            raw_conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            try:
+                conn = tls_ctx.wrap_socket(raw_conn, server_side=True)
+            except Exception as e:
+                log.warning("TLS handshake failed from %s: %s", addr[0], e)
+                raw_conn.close()
+                continue
+            if not self._auth_handshake(conn):
+                log.warning("Auth FAILED from %s — rejected", addr[0])
+                conn.close()
+                conn = None
+                continue
+            log.info("Client authenticated from %s", addr[0])
+            break
+
+        if conn is None:
+            return
+
         self.client_sock = conn
-        log.info("Client connected from %s", addr[0])
 
         # Send hello with screen info
         self._send(MessageType.HELLO, {
@@ -138,6 +167,39 @@ class Server:
         while self.running:
             time.sleep(interval)
             self._send(MessageType.HEARTBEAT)
+
+    # ── Authentication ─────────────────────────────────────────────
+
+    def _auth_handshake(self, conn) -> bool:
+        """Server-side: send HMAC challenge, verify client response."""
+        nonce = os.urandom(32).hex()
+        try:
+            conn.sendall(encode_message(MessageType.AUTH_CHALLENGE, {"nonce": nonce}))
+        except OSError:
+            return False
+        msg = recv_message(conn)
+        if msg is None or msg.get("type") != MessageType.AUTH_RESPONSE:
+            try:
+                conn.sendall(encode_message(MessageType.AUTH_FAIL))
+            except OSError:
+                pass
+            return False
+        expected = hmac.new(
+            self.config["shared_secret"].encode(),
+            nonce.encode(),
+            hashlib.sha256,
+        ).hexdigest()
+        if not hmac.compare_digest(expected, msg.get("data", {}).get("hmac", "")):
+            try:
+                conn.sendall(encode_message(MessageType.AUTH_FAIL))
+            except OSError:
+                pass
+            return False
+        try:
+            conn.sendall(encode_message(MessageType.AUTH_OK))
+        except OSError:
+            return False
+        return True
 
     # ── Cursor visibility (Barrier-style) ──────────────────────────
 

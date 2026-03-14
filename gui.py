@@ -100,6 +100,7 @@ class MainWindow:
         self.clipboard_var = tk.BooleanVar(value=True)
         self.heartbeat_var = tk.IntVar(value=5)
         self.hotkey_var = tk.StringVar(value="<ctrl>+<alt>+s")
+        self.secret_var = tk.StringVar()
         self.ip_var = tk.StringVar()
 
         self._configure_styles()
@@ -342,6 +343,7 @@ class MainWindow:
                                                        fmt="%.2f", step=0.10)),
             ("Heartbeat interval (sec):", self._spinbox(grid, self.heartbeat_var, 1, 60)),
             ("Switch hotkey:",           self._entry(grid, self.hotkey_var, width=24)),
+            ("Shared secret:",           self._entry(grid, self.secret_var, width=24)),
         ]
         for i, (lbl_text, widget) in enumerate(fields):
             self._label(grid, lbl_text).grid(
@@ -356,6 +358,11 @@ class MainWindow:
 
         # Hotkey hint
         tk.Label(grid, text="Format: <ctrl>+<alt>+s",
+                  bg=BG_CARD, fg=FG_DIM, font=("Segoe UI", 8)
+                  ).grid(row=len(fields) - 2, column=2, sticky="w", padx=(10, 0))
+
+        # Secret hint
+        tk.Label(grid, text="Must match on both PCs",
                   bg=BG_CARD, fg=FG_DIM, font=("Segoe UI", 8)
                   ).grid(row=len(fields) - 1, column=2, sticky="w", padx=(10, 0))
 
@@ -382,6 +389,7 @@ class MainWindow:
         self.clipboard_var.set(cfg.get("clipboard_sync", True))
         self.heartbeat_var.set(cfg.get("heartbeat_interval", 5))
         self.hotkey_var.set(cfg.get("switch_hotkey", "<ctrl>+<alt>+s"))
+        self.secret_var.set(cfg.get("shared_secret", ""))
         last_ip = cfg.get("last_server_ip", "")
         if last_ip:
             self.ip_var.set(last_ip)
@@ -397,6 +405,7 @@ class MainWindow:
             "clipboard_sync": self.clipboard_var.get(),
             "heartbeat_interval": self.heartbeat_var.get(),
             "switch_hotkey": self.hotkey_var.get().strip() or "<ctrl>+<alt>+s",
+            "shared_secret": self.secret_var.get().strip(),
             "last_server_ip": self.ip_var.get().strip(),
         }
 

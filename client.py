@@ -3,6 +3,8 @@ Client (remote PC): receives mouse/keyboard events from the server
 and replays them locally.
 """
 
+import hashlib
+import hmac
 import socket
 import sys
 import threading
@@ -12,7 +14,8 @@ import logging
 from pynput.mouse import Button, Controller as MouseController
 from pynput.keyboard import Key, Controller as KeyController, KeyCode
 
-from protocol import MessageType, encode_message, recv_message
+from protocol import (MessageType, encode_message, recv_message,
+                      create_tls_context_client)
 from config import load_config
 from input_utils import get_screen_size, is_at_edge, opposite_edge
 
@@ -60,11 +63,19 @@ class Client:
 
     def start(self):
         """Connect to the server and start handling input events."""
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        log.info("Connecting to %s:%d ...", self.server_ip, self.port)
-        self.sock.connect((self.server_ip, self.port))
-        self.sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-        log.info("Connected!")
+        tls_ctx = create_tls_context_client()
+        raw_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        log.info("Connecting to %s:%d (TLS) ...", self.server_ip, self.port)
+        raw_sock.connect((self.server_ip, self.port))
+        raw_sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        self.sock = tls_ctx.wrap_socket(raw_sock, server_hostname="my-hards")
+        log.info("Connected (TLS)!")
+
+        if not self._auth_handshake():
+            log.error("Authentication FAILED — shared_secret doesn't match server")
+            self._cleanup()
+            return
+        log.info("Authenticated!")
 
         # Immediately tell the server our screen dimensions
         self._send(MessageType.CLIENT_INFO, {
@@ -73,6 +84,21 @@ class Client:
         })
 
         self._receive_loop()
+
+    def _auth_handshake(self) -> bool:
+        """Client-side: respond to server's HMAC challenge."""
+        msg = recv_message(self.sock)
+        if msg is None or msg.get("type") != MessageType.AUTH_CHALLENGE:
+            return False
+        nonce = msg.get("data", {}).get("nonce", "")
+        response = hmac.new(
+            self.config["shared_secret"].encode(),
+            nonce.encode(),
+            hashlib.sha256,
+        ).hexdigest()
+        self._send(MessageType.AUTH_RESPONSE, {"hmac": response})
+        result = recv_message(self.sock)
+        return result is not None and result.get("type") == MessageType.AUTH_OK
 
     def _send(self, msg_type: MessageType, data: dict = None):
         with self.lock:
