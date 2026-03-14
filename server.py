@@ -38,12 +38,17 @@ class Server:
         self.lock = threading.Lock()
         self.mouse_ctrl = MouseController()
 
-        # Center anchor for relay mode (warp-to-center technique)
+        # Center anchor for relay mode (warp-near-edge technique)
         self._cx = self.screen_w // 2
         self._cy = self.screen_h // 2
+        # Last known cursor position (used to compute deltas without warping every event)
+        self._last_x = self._cx
+        self._last_y = self._cy
         # Time-based warp guard (replaces unreliable bool flag)
         self._warp_time = 0.0          # monotonic time of last programmatic warp
         self._WARP_GRACE = 0.012       # seconds to ignore moves after a warp
+        # Warp when cursor is within this many pixels of any edge
+        self._WARP_EDGE = 80
         # Cooldown after switching back to server (prevents instant re-trigger)
         self._switch_back_until = 0.0
         self._SWITCH_BACK_GRACE = 0.6  # seconds
@@ -138,6 +143,8 @@ class Server:
         })
         # Warp cursor to center so future moves always produce non-zero deltas
         self._warp_time = time.monotonic()
+        self._last_x = self._cx
+        self._last_y = self._cy
         self.mouse_ctrl.position = (self._cx, self._cy)
 
     def _switch_to_server(self, data: dict = None):
@@ -176,6 +183,8 @@ class Server:
         # Set cooldown BEFORE warping so the warp callback is suppressed
         self._switch_back_until = time.monotonic() + self._SWITCH_BACK_GRACE
         self._warp_time = time.monotonic()
+        self._last_x = target_x
+        self._last_y = target_y
         self.mouse_ctrl.position = (target_x, target_y)
         log.info("← Switched back to SERVER, cursor at (%d, %d)", target_x, target_y)
 
@@ -248,14 +257,22 @@ class Server:
                 self._switch_to_client()
             return
 
-        # Delta relative to center anchor
-        dx = x - self._cx
-        dy = y - self._cy
+        # Delta relative to last known position
+        dx = x - self._last_x
+        dy = y - self._last_y
+        self._last_x = x
+        self._last_y = y
 
         if dx != 0 or dy != 0:
             self._send(MessageType.MOUSE_MOVE, {"dx": dx, "dy": dy})
-            # Warp back to center so every move is measurable
+
+        # Only warp to center when cursor gets too close to any screen edge,
+        # not on every event — this avoids dropping events between warps.
+        e = self._WARP_EDGE
+        if x < e or x > self.screen_w - e or y < e or y > self.screen_h - e:
             self._warp_time = time.monotonic()
+            self._last_x = self._cx
+            self._last_y = self._cy
             self.mouse_ctrl.position = (self._cx, self._cy)
 
     def _on_mouse_click(self, x, y, button, pressed):
