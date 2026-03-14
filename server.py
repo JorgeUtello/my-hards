@@ -38,9 +38,10 @@ class Server:
         self.lock = threading.Lock()
         self.mouse_ctrl = MouseController()
 
-        # Track last mouse position for relative movement
-        self._last_x = 0
-        self._last_y = 0
+        # Center anchor for relay mode (warp-to-center technique)
+        self._cx = self.screen_w // 2
+        self._cy = self.screen_h // 2
+        self._repositioning = False  # prevents re-entrant warp callbacks
 
         log.info(
             "Screen: %dx%d | Edge: %s | Port: %d",
@@ -117,8 +118,10 @@ class Server:
         self._send(MessageType.SWITCH_TO_CLIENT, {
             "edge": self.switch_edge,
         })
-        # Lock cursor at the edge so it doesn't wander
-        lock_cursor_to_edge(self.switch_edge, self.screen_w, self.screen_h)
+        # Warp cursor to center so future moves always produce non-zero deltas
+        self._repositioning = True
+        self.mouse_ctrl.position = (self._cx, self._cy)
+        self._repositioning = False
 
     def _switch_to_server(self):
         """Called when client signals the cursor came back."""
@@ -171,25 +174,25 @@ class Server:
             self._cleanup()
 
     def _on_mouse_move(self, x: int, y: int):
-        if not self.active:
-            # Check if we should switch to client
-            if is_at_edge(x, y, self.switch_edge, self.screen_w, self.screen_h, self.margin):
-                self._switch_to_client()
-                self._last_x = x
-                self._last_y = y
+        # Ignore callbacks triggered by our own re-centering warp
+        if self._repositioning:
             return
 
-        # Compute relative movement and send to client
-        dx = x - self._last_x
-        dy = y - self._last_y
-        self._last_x = x
-        self._last_y = y
+        if not self.active:
+            if is_at_edge(x, y, self.switch_edge, self.screen_w, self.screen_h, self.margin):
+                self._switch_to_client()
+            return
+
+        # Delta relative to center anchor
+        dx = x - self._cx
+        dy = y - self._cy
 
         if dx != 0 or dy != 0:
             self._send(MessageType.MOUSE_MOVE, {"dx": dx, "dy": dy})
-
-        # Keep cursor locked at edge on server
-        lock_cursor_to_edge(self.switch_edge, self.screen_w, self.screen_h)
+            # Warp back to center so every move is measurable
+            self._repositioning = True
+            self.mouse_ctrl.position = (self._cx, self._cy)
+            self._repositioning = False
 
     def _on_mouse_click(self, x, y, button, pressed):
         if not self.active:
