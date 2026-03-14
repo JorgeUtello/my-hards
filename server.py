@@ -1,0 +1,249 @@
+"""
+Server (host PC): captures mouse/keyboard and forwards events to the client
+when the cursor crosses the screen edge.
+"""
+
+import socket
+import sys
+import threading
+import time
+import logging
+
+from pynput import mouse, keyboard
+from pynput.mouse import Controller as MouseController
+
+from protocol import MessageType, encode_message, recv_message
+from config import load_config
+from input_utils import get_screen_size, is_at_edge, lock_cursor_to_edge, opposite_edge
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="[%(asctime)s] %(levelname)s: %(message)s",
+    datefmt="%H:%M:%S",
+)
+log = logging.getLogger("server")
+
+
+class Server:
+    def __init__(self, config: dict):
+        self.config = config
+        self.port = config["port"]
+        self.switch_edge = config["switch_edge"]
+        self.margin = config["switch_margin"]
+        self.screen_w, self.screen_h = get_screen_size()
+
+        self.client_sock: socket.socket | None = None
+        self.active = False          # True when input is being sent to client
+        self.running = True
+        self.lock = threading.Lock()
+        self.mouse_ctrl = MouseController()
+
+        # Track last mouse position for relative movement
+        self._last_x = 0
+        self._last_y = 0
+
+        log.info(
+            "Screen: %dx%d | Edge: %s | Port: %d",
+            self.screen_w, self.screen_h, self.switch_edge, self.port,
+        )
+
+    # ── Networking ──────────────────────────────────────────────────
+
+    def start(self):
+        """Start the server: listen for a client, then capture input."""
+        srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        srv.bind(("0.0.0.0", self.port))
+        srv.listen(1)
+        log.info("Waiting for client on port %d ...", self.port)
+
+        conn, addr = srv.accept()
+        conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        self.client_sock = conn
+        log.info("Client connected from %s", addr[0])
+
+        # Send hello with screen info
+        self._send(MessageType.HELLO, {
+            "screen_w": self.screen_w,
+            "screen_h": self.screen_h,
+            "edge": self.switch_edge,
+        })
+
+        # Start receiver thread (for switch-back messages)
+        threading.Thread(target=self._receive_loop, daemon=True).start()
+
+        # Start heartbeat
+        threading.Thread(target=self._heartbeat_loop, daemon=True).start()
+
+        # Start input listeners (blocks)
+        self._start_listeners()
+
+    def _send(self, msg_type: MessageType, data: dict = None):
+        with self.lock:
+            if self.client_sock:
+                try:
+                    self.client_sock.sendall(encode_message(msg_type, data))
+                except OSError:
+                    log.error("Lost connection to client")
+                    self.running = False
+
+    def _receive_loop(self):
+        """Listen for messages from the client (e.g. switch-back)."""
+        while self.running:
+            msg = recv_message(self.client_sock)
+            if msg is None:
+                log.warning("Client disconnected")
+                self.running = False
+                break
+            if msg.get("type") == MessageType.SWITCH_TO_SERVER:
+                self._switch_to_server()
+            elif msg.get("type") == MessageType.CLIPBOARD_SYNC:
+                self._handle_clipboard(msg.get("data", {}))
+
+    def _heartbeat_loop(self):
+        interval = self.config.get("heartbeat_interval", 5)
+        while self.running:
+            time.sleep(interval)
+            self._send(MessageType.HEARTBEAT)
+
+    # ── Switching ───────────────────────────────────────────────────
+
+    def _switch_to_client(self):
+        """Called when cursor hits the edge — redirect input to client."""
+        if self.active:
+            return
+        self.active = True
+        log.info("→ Switched to CLIENT")
+        self._send(MessageType.SWITCH_TO_CLIENT, {
+            "edge": self.switch_edge,
+        })
+        # Lock cursor at the edge so it doesn't wander
+        lock_cursor_to_edge(self.switch_edge, self.screen_w, self.screen_h)
+
+    def _switch_to_server(self):
+        """Called when client signals the cursor came back."""
+        if not self.active:
+            return
+        self.active = False
+        log.info("← Switched back to SERVER")
+        opp = opposite_edge(self.switch_edge)
+        lock_cursor_to_edge(opp, self.screen_w, self.screen_h)
+
+    # ── Clipboard ───────────────────────────────────────────────────
+
+    def _handle_clipboard(self, data: dict):
+        if not self.config.get("clipboard_sync"):
+            return
+        text = data.get("text", "")
+        if text:
+            try:
+                import pyperclip
+                pyperclip.copy(text)
+                log.info("Clipboard synced from client (%d chars)", len(text))
+            except Exception:
+                pass
+
+    # ── Input capture ───────────────────────────────────────────────
+
+    def _start_listeners(self):
+        """Start mouse & keyboard listeners (runs in current thread context)."""
+        mouse_listener = mouse.Listener(
+            on_move=self._on_mouse_move,
+            on_click=self._on_mouse_click,
+            on_scroll=self._on_mouse_scroll,
+        )
+        key_listener = keyboard.Listener(
+            on_press=self._on_key_press,
+            on_release=self._on_key_release,
+        )
+        mouse_listener.start()
+        key_listener.start()
+        log.info("Input capture active. Press Ctrl+Alt+Q to quit.")
+
+        try:
+            while self.running:
+                time.sleep(0.1)
+        except KeyboardInterrupt:
+            pass
+        finally:
+            mouse_listener.stop()
+            key_listener.stop()
+            self._cleanup()
+
+    def _on_mouse_move(self, x: int, y: int):
+        if not self.active:
+            # Check if we should switch to client
+            if is_at_edge(x, y, self.switch_edge, self.screen_w, self.screen_h, self.margin):
+                self._switch_to_client()
+                self._last_x = x
+                self._last_y = y
+            return
+
+        # Compute relative movement and send to client
+        dx = x - self._last_x
+        dy = y - self._last_y
+        self._last_x = x
+        self._last_y = y
+
+        if dx != 0 or dy != 0:
+            self._send(MessageType.MOUSE_MOVE, {"dx": dx, "dy": dy})
+
+        # Keep cursor locked at edge on server
+        lock_cursor_to_edge(self.switch_edge, self.screen_w, self.screen_h)
+
+    def _on_mouse_click(self, x, y, button, pressed):
+        if not self.active:
+            return
+        self._send(MessageType.MOUSE_CLICK, {
+            "button": button.name,
+            "pressed": pressed,
+        })
+
+    def _on_mouse_scroll(self, x, y, dx, dy):
+        if not self.active:
+            return
+        self._send(MessageType.MOUSE_SCROLL, {"dx": dx, "dy": dy})
+
+    def _on_key_press(self, key):
+        # Ctrl+Alt+Q to quit
+        if hasattr(key, "char") and key.char == "\x11":  # Ctrl+Q
+            self.running = False
+            return False
+
+        if not self.active:
+            return
+        self._send(MessageType.KEY_PRESS, {"key": _serialize_key(key)})
+
+    def _on_key_release(self, key):
+        if not self.active:
+            return
+        self._send(MessageType.KEY_RELEASE, {"key": _serialize_key(key)})
+
+    def _cleanup(self):
+        self.running = False
+        if self.client_sock:
+            try:
+                self.client_sock.close()
+            except OSError:
+                pass
+        log.info("Server stopped.")
+
+
+def _serialize_key(key) -> dict:
+    """Serialize a pynput key to a JSON-safe dict."""
+    if hasattr(key, "char") and key.char is not None:
+        return {"type": "char", "value": key.char}
+    elif hasattr(key, "vk"):
+        return {"type": "vk", "value": key.vk, "name": key.name if hasattr(key, "name") else str(key)}
+    else:
+        return {"type": "special", "name": key.name}
+
+
+def main():
+    config = load_config()
+    server = Server(config)
+    server.start()
+
+
+if __name__ == "__main__":
+    main()
