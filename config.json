@@ -4,9 +4,9 @@
   "switch_margin": 10,
   "client_screen_width": 1920,
   "client_screen_height": 1080,
-  "client_pointer_speed": 1.0,
+  "client_pointer_speed": 3.0,
   "clipboard_sync": true,
-  "heartbeat_interval": 5,
+  "heartbeat_interval": 1,
   "switch_hotkey": "<ctrl>+<alt>+s",
   "last_server_ip": "192.168.0.35"
 }

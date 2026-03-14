@@ -83,8 +83,8 @@ class MainWindow:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("my-hards")
-        self.root.geometry("720x580")
-        self.root.minsize(680, 520)
+        self.root.geometry("800x700")
+        self.root.minsize(720, 600)
         self.root.configure(bg=BG_MAIN)
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
@@ -113,245 +113,262 @@ class MainWindow:
         style = ttk.Style(self.root)
         style.theme_use("clam")
 
+        # Base ttk (used only for Notebook)
         style.configure(".", background=BG_MAIN, foreground=FG,
                          font=("Segoe UI", 10))
         style.configure("TFrame", background=BG_MAIN)
-        style.configure("Card.TFrame", background=BG_CARD)
-        style.configure("TLabel", background=BG_MAIN, foreground=FG,
-                         font=("Segoe UI", 10))
-        style.configure("Card.TLabel", background=BG_CARD, foreground=FG)
-        style.configure("Title.TLabel", background=BG_MAIN, foreground=ACCENT,
-                         font=("Segoe UI", 22, "bold"))
-        style.configure("Sub.TLabel", background=BG_MAIN, foreground=FG_DIM,
-                         font=("Segoe UI", 10))
-        style.configure("Section.TLabel", background=BG_CARD, foreground=ACCENT,
-                         font=("Segoe UI", 10, "bold"))
-        style.configure("Dot.TLabel", background=BG_CARD, font=("Segoe UI", 14))
-        style.configure("Status.TLabel", background=BG_LOG, foreground=FG_DIM,
-                         font=("Segoe UI", 9))
-
-        # Buttons
-        style.configure("Accent.TButton", background=BG_INPUT, foreground=FG,
-                         font=("Segoe UI", 10, "bold"), padding=(14, 6))
-        style.map("Accent.TButton",
-                   background=[("active", ACCENT), ("disabled", "#2a2a4a")],
-                   foreground=[("active", "#fff"), ("disabled", "#555")])
-
-        style.configure("Stop.TButton", background=RED_DIM, foreground=FG,
-                         font=("Segoe UI", 10, "bold"), padding=(14, 6))
-        style.map("Stop.TButton",
-                   background=[("active", ACCENT), ("disabled", "#2a2a4a")],
-                   foreground=[("active", "#fff"), ("disabled", "#555")])
+        style.configure("TLabel", background=BG_MAIN, foreground=FG)
 
         # Notebook tabs
         style.configure("TNotebook", background=BG_MAIN, borderwidth=0)
         style.configure("TNotebook.Tab", background=BG_CARD, foreground=FG_DIM,
-                         font=("Segoe UI", 10, "bold"), padding=(22, 8))
+                         font=("Segoe UI", 10, "bold"), padding=(26, 9))
         style.map("TNotebook.Tab",
                    background=[("selected", BG_INPUT)],
                    foreground=[("selected", ACCENT)])
 
-        # Checkbutton
-        style.configure("TCheckbutton", background=BG_CARD, foreground=FG,
-                         font=("Segoe UI", 10))
-        style.map("TCheckbutton", background=[("active", BG_CARD)])
+    # ── Native-tk widget helpers (full dark-colour control) ─────────
 
-        # Combobox
-        style.configure("TCombobox", fieldbackground=BG_INPUT,
-                         background=BG_INPUT, foreground=FG,
-                         selectbackground=ACCENT, selectforeground="#fff")
-        style.map("TCombobox",
-                   fieldbackground=[("readonly", BG_INPUT)],
-                   foreground=[("readonly", FG)])
+    def _btn(self, parent, text, command, bg=None, state="normal"):
+        """Create a fully-styled tk.Button."""
+        b = tk.Button(
+            parent, text=text, command=command,
+            bg=bg or BG_INPUT, fg=FG,
+            activebackground=ACCENT, activeforeground="#ffffff",
+            disabledforeground="#555555",
+            font=("Segoe UI", 10, "bold"),
+            relief="flat", bd=0, cursor="hand2",
+            padx=18, pady=8,
+        )
+        if state == "disabled":
+            b.configure(state="disabled", bg="#252545")
+        return b
 
-        # Spinbox
-        style.configure("TSpinbox", fieldbackground=BG_INPUT,
-                         background=BG_INPUT, foreground=FG)
+    def _entry(self, parent, textvariable, width=22):
+        return tk.Entry(
+            parent, textvariable=textvariable, width=width,
+            bg=BG_INPUT, fg=FG, insertbackground=FG,
+            relief="flat", bd=6,
+            font=("Segoe UI", 10),
+            highlightthickness=1, highlightbackground=BORDER,
+            highlightcolor=ACCENT,
+        )
 
-        # Entry
-        style.configure("TEntry", fieldbackground=BG_INPUT, foreground=FG,
-                         insertcolor=FG)
+    def _spinbox(self, parent, variable, lo, hi, fmt=None, step=1):
+        kw = dict(
+            from_=lo, to=hi, textvariable=variable, width=12,
+            bg=BG_INPUT, fg=FG, insertbackground=FG,
+            buttonbackground=BG_INPUT,
+            relief="flat", bd=4,
+            font=("Segoe UI", 10),
+            highlightthickness=1, highlightbackground=BORDER,
+            highlightcolor=ACCENT,
+            increment=step,
+        )
+        if fmt:
+            kw["format"] = fmt
+        return tk.Spinbox(parent, **kw)
 
-        # LabelFrame
-        style.configure("Card.TLabelframe", background=BG_CARD,
-                         bordercolor=BG_INPUT, borderwidth=1)
-        style.configure("Card.TLabelframe.Label", background=BG_CARD,
-                         foreground=ACCENT, font=("Segoe UI", 10, "bold"))
+    def _optionmenu(self, parent, variable, values):
+        om = tk.OptionMenu(parent, variable, *values)
+        om.configure(
+            bg=BG_INPUT, fg=FG,
+            activebackground=ACCENT, activeforeground="#fff",
+            relief="flat", bd=0,
+            font=("Segoe UI", 10),
+            highlightthickness=1, highlightbackground=BORDER,
+            indicatoron=True, width=10,
+        )
+        om["menu"].configure(
+            bg=BG_CARD, fg=FG,
+            activebackground=ACCENT, activeforeground="#fff",
+            relief="flat", bd=0,
+        )
+        return om
+
+    def _card(self, parent, title):
+        """Create a tk.LabelFrame styled as a dark card."""
+        return tk.LabelFrame(
+            parent, text=f"  {title}  ",
+            bg=BG_CARD, fg=ACCENT,
+            font=("Segoe UI", 10, "bold"),
+            relief="flat", bd=2,
+            highlightthickness=1, highlightbackground=BORDER,
+        )
+
+    def _label(self, parent, text, bg=None, fg=None, font=None):
+        return tk.Label(
+            parent, text=text,
+            bg=bg or BG_CARD, fg=fg or FG,
+            font=font or ("Segoe UI", 10),
+        )
+
+    def _checkbutton(self, parent, text, variable):
+        return tk.Checkbutton(
+            parent, text=text, variable=variable,
+            bg=BG_CARD, fg=FG,
+            activebackground=BG_CARD, activeforeground=FG,
+            selectcolor=BG_INPUT,
+            font=("Segoe UI", 10),
+            relief="flat", bd=0,
+        )
 
     # ── Build UI ────────────────────────────────────────────────────
 
     def _build_ui(self):
-        pad = {"padx": 16, "pady": 4}
-
         # Header
-        ttk.Label(self.root, text="my-hards", style="Title.TLabel")\
-            .pack(pady=(14, 0))
-        ttk.Label(self.root, text="Share keyboard & mouse between PCs",
-                  style="Sub.TLabel").pack()
+        tk.Label(self.root, text="my-hards", bg=BG_MAIN, fg=ACCENT,
+                  font=("Segoe UI", 26, "bold")).pack(pady=(16, 0))
+        tk.Label(self.root, text="Share keyboard & mouse between PCs",
+                  bg=BG_MAIN, fg=FG_DIM, font=("Segoe UI", 10)).pack(pady=(0, 4))
 
-        ttk.Separator(self.root).pack(fill="x", padx=20, pady=6)
+        tk.Frame(self.root, bg=BORDER, height=1).pack(fill="x", padx=20, pady=(4, 8))
 
-        # Notebook
+        # Notebook — only tabs are ttk; inner content uses native tk
         nb = ttk.Notebook(self.root)
-        nb.pack(fill="both", expand=True, padx=16, pady=(0, 4))
+        nb.pack(fill="both", expand=False, padx=18, pady=(0, 6))
 
         nb.add(self._build_connection_tab(nb), text="  Connection  ")
         nb.add(self._build_settings_tab(nb), text="  Settings  ")
 
-        # Log
-        log_frame = ttk.LabelFrame(self.root, text="Log",
-                                    style="Card.TLabelframe")
-        log_frame.pack(fill="both", padx=16, pady=(0, 4))
+        # Log (expands to fill remaining space)
+        log_outer = self._card(self.root, "Log")
+        log_outer.pack(fill="both", expand=True, padx=18, pady=(0, 6))
 
-        self.log_text = tk.Text(log_frame, height=7, bg=BG_LOG, fg="#a0d0a0",
-                                 insertbackground=FG, font=("Consolas", 9),
-                                 borderwidth=0, highlightthickness=0,
-                                 state="disabled", wrap="word")
-        self.log_text.pack(fill="both", expand=True, padx=6, pady=6)
+        self.log_text = tk.Text(
+            log_outer, bg=BG_LOG, fg="#7ec88a",
+            insertbackground=FG, font=("Consolas", 9),
+            relief="flat", borderwidth=0, highlightthickness=0,
+            state="disabled", wrap="word",
+        )
+        sb = tk.Scrollbar(log_outer, orient="vertical",
+                           command=self.log_text.yview,
+                           bg=BG_CARD, troughcolor=BG_MAIN,
+                           activebackground=ACCENT, relief="flat", bd=0)
+        self.log_text.configure(yscrollcommand=sb.set)
+        sb.pack(side="right", fill="y", padx=(0, 4), pady=6)
+        self.log_text.pack(fill="both", expand=True, padx=(8, 0), pady=6)
 
         # Status bar
-        self.status_label = ttk.Label(self.root, style="Status.TLabel",
-                                       anchor="w")
-        self.status_label.pack(fill="x", side="bottom", ipady=3, padx=1)
+        self.status_label = tk.Label(
+            self.root, anchor="w",
+            bg=BG_LOG, fg=FG_DIM, font=("Segoe UI", 9),
+        )
+        self.status_label.pack(fill="x", side="bottom", ipady=4, padx=0)
         self._update_status_bar()
 
     def _build_connection_tab(self, parent) -> ttk.Frame:
-        tab = ttk.Frame(parent)
+        tab = ttk.Frame(parent)   # ttk Frame so notebook background works
 
         # ── Server card ──
-        srv = ttk.LabelFrame(tab,
-                              text="  Server Mode  (this PC shares keyboard & mouse)  ",
-                              style="Card.TLabelframe")
-        srv.pack(fill="x", padx=8, pady=(10, 4))
-        srv_inner = ttk.Frame(srv, style="Card.TFrame")
-        srv_inner.pack(fill="x", padx=8, pady=8)
+        srv = self._card(tab, "Server Mode  —  this PC shares keyboard & mouse")
+        srv.pack(fill="x", padx=10, pady=(12, 6))
 
-        self.server_dot = ttk.Label(srv_inner, text="\u2b24",
-                                     style="Dot.TLabel", foreground="#555")
+        srv_inner = tk.Frame(srv, bg=BG_CARD)
+        srv_inner.pack(fill="x", padx=12, pady=10)
+
+        self.server_dot = tk.Label(srv_inner, text="\u2b24",
+                                    bg=BG_CARD, fg="#444", font=("Segoe UI", 16))
         self.server_dot.pack(side="left")
 
-        self.server_status_lbl = ttk.Label(srv_inner, text="Stopped",
-                                            style="Card.TLabel")
-        self.server_status_lbl.pack(side="left", padx=(6, 0), fill="x", expand=True)
+        self.server_status_lbl = tk.Label(srv_inner, text="Stopped",
+                                           bg=BG_CARD, fg=FG_DIM,
+                                           font=("Segoe UI", 10))
+        self.server_status_lbl.pack(side="left", padx=(8, 0))
 
-        self.stop_server_btn = ttk.Button(srv_inner, text="\u25a0  Stop",
-                                           style="Stop.TButton",
-                                           command=self.stop_server,
-                                           state="disabled")
-        self.stop_server_btn.pack(side="right", padx=(4, 0))
+        # spacer
+        tk.Frame(srv_inner, bg=BG_CARD).pack(side="left", fill="x", expand=True)
 
-        self.start_server_btn = ttk.Button(srv_inner, text="\u25b6  Start Server",
-                                            style="Accent.TButton",
-                                            command=self.start_server)
+        self.stop_server_btn = self._btn(srv_inner, "\u25a0  Stop",
+                                          self.stop_server, bg="#4a2020",
+                                          state="disabled")
+        self.stop_server_btn.pack(side="right", padx=(6, 0))
+
+        self.start_server_btn = self._btn(srv_inner, "\u25b6  Start Server",
+                                           self.start_server)
         self.start_server_btn.pack(side="right")
 
         # ── Client card ──
-        cli = ttk.LabelFrame(tab,
-                              text="  Client Mode  (this PC receives input)  ",
-                              style="Card.TLabelframe")
-        cli.pack(fill="x", padx=8, pady=(4, 4))
+        cli = self._card(tab, "Client Mode  —  this PC receives input")
+        cli.pack(fill="x", padx=10, pady=(0, 10))
 
-        row0 = ttk.Frame(cli, style="Card.TFrame")
-        row0.pack(fill="x", padx=8, pady=(8, 2))
+        row0 = tk.Frame(cli, bg=BG_CARD)
+        row0.pack(fill="x", padx=12, pady=(10, 4))
 
-        self.client_dot = ttk.Label(row0, text="\u2b24",
-                                     style="Dot.TLabel", foreground="#555")
+        self.client_dot = tk.Label(row0, text="\u2b24",
+                                    bg=BG_CARD, fg="#444", font=("Segoe UI", 16))
         self.client_dot.pack(side="left")
 
-        self.client_status_lbl = ttk.Label(row0, text="Disconnected",
-                                            style="Card.TLabel")
-        self.client_status_lbl.pack(side="left", padx=(6, 0))
+        self.client_status_lbl = tk.Label(row0, text="Disconnected",
+                                           bg=BG_CARD, fg=FG_DIM,
+                                           font=("Segoe UI", 10))
+        self.client_status_lbl.pack(side="left", padx=(8, 0))
 
-        row1 = ttk.Frame(cli, style="Card.TFrame")
-        row1.pack(fill="x", padx=8, pady=(2, 8))
+        row1 = tk.Frame(cli, bg=BG_CARD)
+        row1.pack(fill="x", padx=12, pady=(0, 12))
 
-        ttk.Label(row1, text="Server IP:", style="Card.TLabel")\
-            .pack(side="left")
+        self._label(row1, "Server IP:").pack(side="left")
 
-        self.ip_entry = ttk.Entry(row1, textvariable=self.ip_var, width=18)
-        self.ip_entry.pack(side="left", padx=(6, 6))
+        self.ip_entry = self._entry(row1, self.ip_var, width=22)
+        self.ip_entry.pack(side="left", padx=(8, 10))
         self.ip_entry.bind("<Return>", lambda _: self.start_client())
 
-        self.start_client_btn = ttk.Button(row1, text="\u25b6  Connect",
-                                            style="Accent.TButton",
-                                            command=self.start_client)
+        self.start_client_btn = self._btn(row1, "\u25b6  Connect",
+                                           self.start_client)
         self.start_client_btn.pack(side="left")
 
-        self.stop_client_btn = ttk.Button(row1, text="\u25a0  Stop",
-                                           style="Stop.TButton",
-                                           command=self.stop_client,
-                                           state="disabled")
-        self.stop_client_btn.pack(side="left", padx=(4, 0))
+        self.stop_client_btn = self._btn(row1, "\u25a0  Stop",
+                                          self.stop_client, bg="#4a2020",
+                                          state="disabled")
+        self.stop_client_btn.pack(side="left", padx=(6, 0))
 
         return tab
 
     def _build_settings_tab(self, parent) -> ttk.Frame:
         tab = ttk.Frame(parent)
 
-        cfg = ttk.LabelFrame(tab, text="  Configuration  ",
-                              style="Card.TLabelframe")
-        cfg.pack(fill="x", padx=8, pady=(10, 4))
+        cfg = self._card(tab, "Configuration")
+        cfg.pack(fill="x", padx=10, pady=(12, 6))
 
-        grid = ttk.Frame(cfg, style="Card.TFrame")
-        grid.pack(fill="x", padx=12, pady=10)
+        grid = tk.Frame(cfg, bg=BG_CARD)
+        grid.pack(fill="x", padx=16, pady=12)
 
-        rows = [
-            ("Port:", self._make_spinbox(grid, self.port_var, 1024, 65535)),
-            ("Switch edge:", self._make_combobox(grid, self.edge_var,
-                                                  ["right", "left", "top", "bottom"])),
-            ("Switch margin (px):", self._make_spinbox(grid, self.margin_var, 1, 50)),
-            ("Client pointer speed:", self._make_spinbox_float(grid, self.speed_var,
-                                                                0.10, 4.00, 0.10)),
-            ("Heartbeat interval (sec):", self._make_spinbox(grid, self.heartbeat_var,
-                                                              1, 60)),
-            ("Switch hotkey:", self._make_entry(grid, self.hotkey_var)),
+        fields = [
+            ("Port:",                    self._spinbox(grid, self.port_var, 1024, 65535)),
+            ("Switch edge:",             self._optionmenu(grid, self.edge_var,
+                                                          ["right", "left", "top", "bottom"])),
+            ("Switch margin (px):",      self._spinbox(grid, self.margin_var, 1, 50)),
+            ("Client pointer speed:",    self._spinbox(grid, self.speed_var, 0.10, 4.00,
+                                                       fmt="%.2f", step=0.10)),
+            ("Heartbeat interval (sec):", self._spinbox(grid, self.heartbeat_var, 1, 60)),
+            ("Switch hotkey:",           self._entry(grid, self.hotkey_var, width=24)),
         ]
-        for i, (label, widget) in enumerate(rows):
-            ttk.Label(grid, text=label, style="Card.TLabel")\
-                .grid(row=i, column=0, sticky="e", padx=(0, 10), pady=4)
-            widget.grid(row=i, column=1, sticky="w", pady=4)
+        for i, (lbl_text, widget) in enumerate(fields):
+            self._label(grid, lbl_text).grid(
+                row=i, column=0, sticky="e", padx=(0, 12), pady=6)
+            widget.grid(row=i, column=1, sticky="w", pady=6)
 
         # Clipboard checkbox
-        self.clip_check = ttk.Checkbutton(grid, text="Sync clipboard between PCs",
-                                           variable=self.clipboard_var)
-        self.clip_check.grid(row=len(rows), column=0, columnspan=2,
-                              sticky="w", pady=4)
+        self.clip_check = self._checkbutton(
+            grid, "Sync clipboard between PCs", self.clipboard_var)
+        self.clip_check.grid(row=len(fields), column=0, columnspan=2,
+                              sticky="w", pady=(8, 2))
 
         # Hotkey hint
-        hint = ttk.Label(grid, text="Hotkey format: <ctrl>, <alt>, <shift> + letter",
-                          style="Card.TLabel", foreground=FG_DIM,
-                          font=("Segoe UI", 8))
-        hint.grid(row=len(rows) - 1, column=2, sticky="w", padx=(8, 0))
+        tk.Label(grid, text="Format: <ctrl>+<alt>+s",
+                  bg=BG_CARD, fg=FG_DIM, font=("Segoe UI", 8)
+                  ).grid(row=len(fields) - 1, column=2, sticky="w", padx=(10, 0))
 
         # Buttons
-        btn_row = ttk.Frame(tab)
-        btn_row.pack(fill="x", padx=8, pady=(4, 8))
+        btn_row = tk.Frame(tab, bg=BG_MAIN)
+        btn_row.pack(fill="x", padx=10, pady=(4, 10))
 
-        ttk.Button(btn_row, text="Reset defaults", style="Accent.TButton",
-                    command=self.reset_config).pack(side="right", padx=(4, 0))
-        ttk.Button(btn_row, text="Save config.json", style="Accent.TButton",
-                    command=self.save_config).pack(side="right")
+        self._btn(btn_row, "Reset defaults",
+                   self.reset_config).pack(side="right", padx=(6, 0))
+        self._btn(btn_row, "Save config.json",
+                   self.save_config).pack(side="right")
 
         return tab
-
-    # ── Widget factories ────────────────────────────────────────────
-
-    def _make_spinbox(self, parent, var, lo, hi):
-        sb = ttk.Spinbox(parent, from_=lo, to=hi, textvariable=var, width=10)
-        return sb
-
-    def _make_spinbox_float(self, parent, var, lo, hi, step):
-        sb = ttk.Spinbox(parent, from_=lo, to=hi, increment=step,
-                          textvariable=var, width=10, format="%.2f")
-        return sb
-
-    def _make_combobox(self, parent, var, values):
-        cb = ttk.Combobox(parent, textvariable=var, values=values,
-                           state="readonly", width=10)
-        return cb
-
-    def _make_entry(self, parent, var):
-        return ttk.Entry(parent, textvariable=var, width=18)
 
     # ── Config helpers ──────────────────────────────────────────────
 
@@ -462,24 +479,31 @@ class MainWindow:
     # ── UI state helpers ────────────────────────────────────────────
 
     def _set_server_state(self, running: bool):
-        self.start_server_btn.configure(
-            state="disabled" if running else "normal")
-        self.stop_server_btn.configure(
-            state="normal" if running else "disabled")
-        self.server_dot.configure(foreground=GREEN if running else "#555")
+        if running:
+            self.start_server_btn.configure(state="disabled", bg="#252545")
+            self.stop_server_btn.configure(state="normal", bg="#4a2020")
+        else:
+            self.start_server_btn.configure(state="normal", bg=BG_INPUT)
+            self.stop_server_btn.configure(state="disabled", bg="#252545")
+        self.server_dot.configure(fg=GREEN if running else "#444")
         self.server_status_lbl.configure(
-            text="Running \u2014 waiting for client..." if running else "Stopped")
+            text="Running \u2014 waiting for client..." if running else "Stopped",
+            fg=GREEN if running else FG_DIM)
         self._update_status_bar()
 
     def _set_client_state(self, running: bool):
-        self.start_client_btn.configure(
-            state="disabled" if running else "normal")
-        self.stop_client_btn.configure(
-            state="normal" if running else "disabled")
-        self.ip_entry.configure(state="disabled" if running else "normal")
-        self.client_dot.configure(foreground=GREEN if running else "#555")
+        if running:
+            self.start_client_btn.configure(state="disabled", bg="#252545")
+            self.stop_client_btn.configure(state="normal", bg="#4a2020")
+            self.ip_entry.configure(state="disabled")
+        else:
+            self.start_client_btn.configure(state="normal", bg=BG_INPUT)
+            self.stop_client_btn.configure(state="disabled", bg="#252545")
+            self.ip_entry.configure(state="normal")
+        self.client_dot.configure(fg=GREEN if running else "#444")
         self.client_status_lbl.configure(
-            text="Connected" if running else "Disconnected")
+            text="Connected" if running else "Disconnected",
+            fg=GREEN if running else FG_DIM)
         self._update_status_bar()
 
     def _update_status_bar(self):

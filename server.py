@@ -10,7 +10,6 @@ detection (when idle) and keyboard/click/scroll forwarding.
 
 import ctypes
 import ctypes.wintypes as wintypes
-import os
 import socket
 import sys
 import threading
@@ -57,11 +56,6 @@ class Server:
         self._switch_back_until = 0.0
         self._SWITCH_BACK_GRACE = 0.6  # seconds
 
-        # Focus tracking: only gate edge detection when our app lacks focus.
-        # NEVER blocks relay/click/key forwarding while active.
-        self._app_focused = True
-        self._my_pids = {os.getpid(), os.getppid()}
-
         # Client screen dimensions (received via CLIENT_INFO message)
         self.client_screen_w = config.get("client_screen_width", 1920)
         self.client_screen_h = config.get("client_screen_height", 1080)
@@ -105,9 +99,6 @@ class Server:
         # Start heartbeat
         threading.Thread(target=self._heartbeat_loop, daemon=True).start()
 
-        # Start focus monitor
-        threading.Thread(target=self._focus_loop, daemon=True).start()
-
         # Start mouse relay polling thread (Barrier-style)
         threading.Thread(target=self._relay_loop, daemon=True).start()
 
@@ -147,19 +138,6 @@ class Server:
         while self.running:
             time.sleep(interval)
             self._send(MessageType.HEARTBEAT)
-
-    def _focus_loop(self):
-        """Poll Windows foreground window every 100 ms to track focus."""
-        user32 = ctypes.windll.user32
-        while self.running:
-            try:
-                hwnd = user32.GetForegroundWindow()
-                pid = ctypes.c_ulong(0)
-                user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-                self._app_focused = pid.value in self._my_pids
-            except Exception:
-                self._app_focused = True  # fail-open
-            time.sleep(0.1)
 
     # ── Cursor visibility (Barrier-style) ──────────────────────────
 
@@ -316,10 +294,6 @@ class Server:
         # Mouse relay is handled by _relay_loop — this callback is
         # only used for edge detection when NOT active.
         if self.active:
-            return
-
-        # Only detect edge if our app has foreground focus
-        if not self._app_focused:
             return
 
         if time.monotonic() < self._switch_back_until:
