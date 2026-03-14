@@ -13,6 +13,9 @@ from tkinter import ttk
 from datetime import datetime
 from pathlib import Path
 
+import pystray
+from PIL import Image, ImageDraw
+
 ROOT = Path(__file__).parent
 
 # ── Dark colour palette ─────────────────────────────────────────────
@@ -87,6 +90,9 @@ class MainWindow:
         self.root.minsize(720, 600)
         self.root.configure(bg=BG_MAIN)
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
+        self.root.bind("<Unmap>", self._on_minimize)
+
+        self.tray_icon: pystray.Icon | None = None
 
         self.server_proc: _Proc | None = None
         self.client_proc: _Proc | None = None
@@ -543,10 +549,56 @@ class MainWindow:
         self.log_text.see("end")
         self.log_text.configure(state="disabled")
 
+    # ── System tray ─────────────────────────────────────────────────
+
+    def _create_tray_image(self) -> Image.Image:
+        """Draw a simple 64x64 icon for the tray."""
+        img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
+        dc = ImageDraw.Draw(img)
+        dc.rounded_rectangle([4, 4, 60, 60], radius=12, fill="#1a1a2e", outline="#e94560", width=3)
+        dc.text((16, 14), "MH", fill="#e94560")
+        return img
+
+    def _on_minimize(self, event=None):
+        """When the window is minimized, hide it and show a tray icon."""
+        if self.root.state() == "iconic":
+            self.root.withdraw()
+            if self.tray_icon is None:
+                menu = pystray.Menu(
+                    pystray.MenuItem("Abrir my-hards", self._tray_restore, default=True),
+                    pystray.MenuItem("Cerrar", self._tray_quit),
+                )
+                self.tray_icon = pystray.Icon("my-hards", self._create_tray_image(),
+                                              "my-hards", menu)
+                threading.Thread(target=self.tray_icon.run, daemon=True).start()
+
+    def _tray_restore(self, icon=None, item=None):
+        """Restore the window from tray."""
+        if self.tray_icon:
+            self.tray_icon.stop()
+            self.tray_icon = None
+        self.root.after(0, self._show_window)
+
+    def _show_window(self):
+        self.root.deiconify()
+        self.root.state("normal")
+        self.root.lift()
+        self.root.focus_force()
+
+    def _tray_quit(self, icon=None, item=None):
+        """Close the app from the tray menu."""
+        if self.tray_icon:
+            self.tray_icon.stop()
+            self.tray_icon = None
+        self.root.after(0, self._on_close)
+
     # ── Window close ────────────────────────────────────────────────
 
     def _on_close(self):
         self.save_config()
+        if self.tray_icon:
+            self.tray_icon.stop()
+            self.tray_icon = None
         for proc in (self.client_proc, self.server_proc):
             if proc and proc.is_running():
                 proc.kill()
