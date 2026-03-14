@@ -14,6 +14,7 @@ DEFAULT_CONFIG = {
     "switch_margin": 2,          # Pixels from edge to trigger switch
     "client_screen_width": 1920,
     "client_screen_height": 1080,
+    "client_pointer_speed": 1.0,
     "clipboard_sync": True,
     "heartbeat_interval": 5,
     "switch_hotkey": "<ctrl>+<alt>+s",  # Hotkey to manually switch PC

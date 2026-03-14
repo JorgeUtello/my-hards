@@ -38,6 +38,7 @@ class Client:
         self.config = config
         self.port = config["port"]
         self.screen_w, self.screen_h = get_screen_size()
+        self.pointer_speed = float(config.get("client_pointer_speed", 1.0))
 
         self.sock: socket.socket | None = None
         self.active = False          # True when this PC is receiving input
@@ -51,8 +52,8 @@ class Client:
         self.entry_edge = "left"     # Edge where cursor enters on this screen
 
         log.info(
-            "Screen: %dx%d | Server: %s:%d",
-            self.screen_w, self.screen_h, self.server_ip, self.port,
+            "Screen: %dx%d | Server: %s:%d | Pointer speed: %.2fx",
+            self.screen_w, self.screen_h, self.server_ip, self.port, self.pointer_speed,
         )
 
     # ── Networking ──────────────────────────────────────────────────
@@ -175,8 +176,8 @@ class Client:
     # ── Mouse handlers ──────────────────────────────────────────────
 
     def _handle_mouse_move(self, data: dict):
-        dx = data.get("dx", 0)
-        dy = data.get("dy", 0)
+        dx = int(round(data.get("dx", 0) * self.pointer_speed))
+        dy = int(round(data.get("dy", 0) * self.pointer_speed))
         cx, cy = self.mouse.position
         nx = cx + dx
         ny = cy + dy

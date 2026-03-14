@@ -13,7 +13,7 @@ from pathlib import Path
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QLineEdit, QTextEdit, QComboBox,
-    QSpinBox, QCheckBox, QGroupBox, QFrame, QTabWidget,
+    QSpinBox, QDoubleSpinBox, QCheckBox, QGroupBox, QFrame, QTabWidget,
     QGridLayout, QSizePolicy, QStatusBar,
 )
 from PySide6.QtCore import Qt, QTimer, QProcess
@@ -352,6 +352,16 @@ class MainWindow(QMainWindow):
         grid.addWidget(self.margin_spin, row, 1)
 
         row += 1
+        grid.addWidget(QLabel("Client pointer speed:"), row, 0, Qt.AlignRight)
+        self.pointer_speed_spin = QDoubleSpinBox()
+        self.pointer_speed_spin.setRange(0.10, 4.00)
+        self.pointer_speed_spin.setSingleStep(0.10)
+        self.pointer_speed_spin.setDecimals(2)
+        self.pointer_speed_spin.setValue(1.0)
+        self.pointer_speed_spin.setSuffix("x")
+        grid.addWidget(self.pointer_speed_spin, row, 1)
+
+        row += 1
         self.clipboard_check = QCheckBox("Sync clipboard between PCs")
         self.clipboard_check.setChecked(True)
         grid.addWidget(self.clipboard_check, row, 0, 1, 2)
@@ -402,6 +412,7 @@ class MainWindow(QMainWindow):
         if idx >= 0:
             self.edge_combo.setCurrentIndex(idx)
         self.margin_spin.setValue(cfg.get("switch_margin", 2))
+        self.pointer_speed_spin.setValue(float(cfg.get("client_pointer_speed", 1.0)))
         self.clipboard_check.setChecked(cfg.get("clipboard_sync", True))
         self.heartbeat_spin.setValue(cfg.get("heartbeat_interval", 5))
         self.hotkey_input.setText(cfg.get("switch_hotkey", "<ctrl>+<alt>+s"))
@@ -417,6 +428,7 @@ class MainWindow(QMainWindow):
             "switch_margin": self.margin_spin.value(),
             "client_screen_width": 1920,
             "client_screen_height": 1080,
+            "client_pointer_speed": self.pointer_speed_spin.value(),
             "clipboard_sync": self.clipboard_check.isChecked(),
             "heartbeat_interval": self.heartbeat_spin.value(),
             "switch_hotkey": self.hotkey_input.text().strip() or "<ctrl>+<alt>+s",

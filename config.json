@@ -6,5 +6,6 @@
   "client_screen_height": 1080,
   "clipboard_sync": true,
   "heartbeat_interval": 5,
-  "switch_hotkey": "<ctrl>+<alt>+s"
+  "switch_hotkey": "<ctrl>+<alt>+s",
+  "last_server_ip": "192.168.0.35"
 }
