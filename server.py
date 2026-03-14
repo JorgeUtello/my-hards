@@ -43,7 +43,7 @@ class Server:
         self._cy = self.screen_h // 2
         # Time-based warp guard (replaces unreliable bool flag)
         self._warp_time = 0.0          # monotonic time of last programmatic warp
-        self._WARP_GRACE = 0.08        # seconds to ignore moves after a warp
+        self._WARP_GRACE = 0.012       # seconds to ignore moves after a warp
         # Cooldown after switching back to server (prevents instant re-trigger)
         self._switch_back_until = 0.0
         self._SWITCH_BACK_GRACE = 0.6  # seconds
