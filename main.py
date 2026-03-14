@@ -17,9 +17,10 @@ def main():
     print("  1) Server  (PC with the keyboard/mouse)")
     print("  2) Client  (PC that receives input)")
     print("  3) Generate default config")
+    print("  4) Launch GUI")
     print()
 
-    choice = input("Select mode [1/2/3]: ").strip()
+    choice = input("Select mode [1/2/3/4]: ").strip()
 
     if choice == "1":
         from server import main as server_main
@@ -39,6 +40,14 @@ def main():
         save_config(DEFAULT_CONFIG)
         print("Default config saved to config.json")
         print("Edit it to customize port, switch edge, etc.")
+
+    elif choice == "4":
+        try:
+            from gui import main as gui_main
+            gui_main()
+        except Exception as e:
+            print("Failed to launch GUI:", e)
+            sys.exit(1)
 
     else:
         print("Invalid option")
