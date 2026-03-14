@@ -17,6 +17,7 @@ DEFAULT_CONFIG = {
     "clipboard_sync": True,
     "heartbeat_interval": 5,
     "switch_hotkey": "<ctrl>+<alt>+s",  # Hotkey to manually switch PC
+    "last_server_ip": "",               # Last used server IP (auto-saved)
 }
 
 

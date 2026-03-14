@@ -405,6 +405,10 @@ class MainWindow(QMainWindow):
         self.clipboard_check.setChecked(cfg.get("clipboard_sync", True))
         self.heartbeat_spin.setValue(cfg.get("heartbeat_interval", 5))
         self.hotkey_input.setText(cfg.get("switch_hotkey", "<ctrl>+<alt>+s"))
+        # Restore last used server IP
+        last_ip = cfg.get("last_server_ip", "")
+        if last_ip:
+            self.ip_input.setText(last_ip)
 
     def _ui_to_config(self) -> dict:
         return {
@@ -416,6 +420,7 @@ class MainWindow(QMainWindow):
             "clipboard_sync": self.clipboard_check.isChecked(),
             "heartbeat_interval": self.heartbeat_spin.value(),
             "switch_hotkey": self.hotkey_input.text().strip() or "<ctrl>+<alt>+s",
+            "last_server_ip": self.ip_input.text().strip(),
         }
 
     def save_config(self):
@@ -563,6 +568,8 @@ class MainWindow(QMainWindow):
     # ── Window close ────────────────────────────────────────────────
 
     def closeEvent(self, event):
+        # Auto-save all settings and IP before closing
+        self.save_config()
         for proc in (self.client_proc, self.server_proc):
             if proc and proc.state() != QProcess.NotRunning:
                 proc.kill()   # kill immediately on close — no grace period
