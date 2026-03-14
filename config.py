@@ -16,6 +16,7 @@ DEFAULT_CONFIG = {
     "client_screen_height": 1080,
     "clipboard_sync": True,
     "heartbeat_interval": 5,
+    "switch_hotkey": "<ctrl>+<alt>+s",  # Hotkey to manually switch PC
 }
 
 

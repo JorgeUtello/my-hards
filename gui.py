@@ -363,6 +363,16 @@ class MainWindow(QMainWindow):
         self.heartbeat_spin.setValue(5)
         grid.addWidget(self.heartbeat_spin, row, 1)
 
+        row += 1
+        grid.addWidget(QLabel("Switch hotkey:"), row, 0, Qt.AlignRight)
+        self.hotkey_input = QLineEdit()
+        self.hotkey_input.setPlaceholderText("e.g. <ctrl>+<alt>+s")
+        self.hotkey_input.setText("<ctrl>+<alt>+s")
+        grid.addWidget(self.hotkey_input, row, 1)
+        hotkey_hint = QLabel("Format: <ctrl>, <alt>, <shift> + letter")
+        hotkey_hint.setStyleSheet("color: #666; font-size: 11px;")
+        grid.addWidget(hotkey_hint, row + 1, 1)
+
         layout.addWidget(settings_group)
 
         # Save / Reset row
@@ -394,6 +404,7 @@ class MainWindow(QMainWindow):
         self.margin_spin.setValue(cfg.get("switch_margin", 2))
         self.clipboard_check.setChecked(cfg.get("clipboard_sync", True))
         self.heartbeat_spin.setValue(cfg.get("heartbeat_interval", 5))
+        self.hotkey_input.setText(cfg.get("switch_hotkey", "<ctrl>+<alt>+s"))
 
     def _ui_to_config(self) -> dict:
         return {
@@ -404,6 +415,7 @@ class MainWindow(QMainWindow):
             "client_screen_height": 1080,
             "clipboard_sync": self.clipboard_check.isChecked(),
             "heartbeat_interval": self.heartbeat_spin.value(),
+            "switch_hotkey": self.hotkey_input.text().strip() or "<ctrl>+<alt>+s",
         }
 
     def save_config(self):
@@ -438,8 +450,14 @@ class MainWindow(QMainWindow):
 
     def stop_server(self):
         if self.server_proc and self.server_proc.state() != QProcess.NotRunning:
-            self.server_proc.terminate()
             self._log("Server stopping...")
+            self.stop_server_btn.setEnabled(False)
+            self.server_proc.terminate()
+            QTimer.singleShot(1500, self._force_kill_server)
+
+    def _force_kill_server(self):
+        if self.server_proc and self.server_proc.state() != QProcess.NotRunning:
+            self.server_proc.kill()
 
     def start_client(self):
         ip = self.ip_input.text().strip()
@@ -465,8 +483,14 @@ class MainWindow(QMainWindow):
 
     def stop_client(self):
         if self.client_proc and self.client_proc.state() != QProcess.NotRunning:
-            self.client_proc.terminate()
             self._log("Client stopping...")
+            self.stop_client_btn.setEnabled(False)
+            self.client_proc.terminate()
+            QTimer.singleShot(1500, self._force_kill_client)
+
+    def _force_kill_client(self):
+        if self.client_proc and self.client_proc.state() != QProcess.NotRunning:
+            self.client_proc.kill()
 
     # ── QProcess callbacks ──────────────────────────────────────────
 
@@ -541,8 +565,8 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
         for proc in (self.client_proc, self.server_proc):
             if proc and proc.state() != QProcess.NotRunning:
-                proc.terminate()
-                proc.waitForFinished(2000)
+                proc.kill()   # kill immediately on close — no grace period
+                proc.waitForFinished(1000)
         event.accept()
 
 

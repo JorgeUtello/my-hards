@@ -43,6 +43,9 @@ class Server:
         self._cy = self.screen_h // 2
         self._repositioning = False  # prevents re-entrant warp callbacks
 
+        # Hotkey suppression: don't forward keys for a short window after hotkey fires
+        self._suppress_until = 0.0
+
         log.info(
             "Screen: %dx%d | Edge: %s | Port: %d",
             self.screen_w, self.screen_h, self.switch_edge, self.port,
@@ -159,9 +162,13 @@ class Server:
             on_press=self._on_key_press,
             on_release=self._on_key_release,
         )
+        hotkey_str = self.config.get("switch_hotkey", "<ctrl>+<alt>+s")
+        hotkey_listener = keyboard.GlobalHotKeys({hotkey_str: self._on_hotkey})
+
         mouse_listener.start()
         key_listener.start()
-        log.info("Input capture active. Press Ctrl+Alt+Q to quit.")
+        hotkey_listener.start()
+        log.info("Input capture active. Hotkey: %s | Ctrl+Alt+Q to quit.", hotkey_str)
 
         try:
             while self.running:
@@ -171,7 +178,18 @@ class Server:
         finally:
             mouse_listener.stop()
             key_listener.stop()
+            hotkey_listener.stop()
             self._cleanup()
+
+    def _on_hotkey(self):
+        """Called when the manual switch hotkey is pressed."""
+        self._suppress_until = time.time() + 0.35  # suppress next 350 ms of key events
+        if self.active:
+            log.info("Hotkey → switching back to SERVER")
+            self._switch_to_server()
+        else:
+            log.info("Hotkey → switching to CLIENT")
+            self._switch_to_client()
 
     def _on_mouse_move(self, x: int, y: int):
         # Ignore callbacks triggered by our own re-centering warp
@@ -213,11 +231,19 @@ class Server:
             self.running = False
             return False
 
+        # Suppress hotkey combo keys so they're not forwarded to client
+        if time.time() < self._suppress_until:
+            return
+
         if not self.active:
             return
         self._send(MessageType.KEY_PRESS, {"key": _serialize_key(key)})
 
     def _on_key_release(self, key):
+        # Suppress hotkey combo keys
+        if time.time() < self._suppress_until:
+            return
+
         if not self.active:
             return
         self._send(MessageType.KEY_RELEASE, {"key": _serialize_key(key)})
