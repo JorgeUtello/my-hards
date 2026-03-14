@@ -245,35 +245,30 @@ class Server:
             self._switch_to_client()
 
     def _on_mouse_move(self, x: int, y: int):
-        # Ignore move events shortly after any programmatic warp (time-based, thread-safe)
-        if time.monotonic() - self._warp_time < self._WARP_GRACE:
-            return
-
-        if not self.active:
-            # Don't detect edge during switch-back cooldown
-            if time.monotonic() < self._switch_back_until:
+        if self.active:
+            # While relaying to client: ignore events caused by our own warps,
+            # then freeze the server cursor by warping back to center every time.
+            if time.monotonic() - self._warp_time < self._WARP_GRACE:
                 return
-            if is_at_edge(x, y, self.switch_edge, self.screen_w, self.screen_h, self.margin):
-                self._switch_to_client()
-            return
 
-        # Delta relative to last known position
-        dx = x - self._last_x
-        dy = y - self._last_y
-        self._last_x = x
-        self._last_y = y
+            dx = x - self._last_x
+            dy = y - self._last_y
 
-        if dx != 0 or dy != 0:
-            self._send(MessageType.MOUSE_MOVE, {"dx": dx, "dy": dy})
+            if dx != 0 or dy != 0:
+                self._send(MessageType.MOUSE_MOVE, {"dx": dx, "dy": dy})
 
-        # Only warp to center when cursor gets too close to any screen edge,
-        # not on every event — this avoids dropping events between warps.
-        e = self._WARP_EDGE
-        if x < e or x > self.screen_w - e or y < e or y > self.screen_h - e:
+            # Freeze cursor on server screen
             self._warp_time = time.monotonic()
             self._last_x = self._cx
             self._last_y = self._cy
             self.mouse_ctrl.position = (self._cx, self._cy)
+            return
+
+        # Not active: detect edge trigger (ignore during switch-back cooldown)
+        if time.monotonic() < self._switch_back_until:
+            return
+        if is_at_edge(x, y, self.switch_edge, self.screen_w, self.screen_h, self.margin):
+            self._switch_to_client()
 
     def _on_mouse_click(self, x, y, button, pressed):
         if not self.active:
