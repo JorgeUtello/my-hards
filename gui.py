@@ -1,181 +1,35 @@
 """
 my-hards — Desktop GUI for sharing keyboard & mouse between PCs.
-Modern dark-themed interface with PySide6.
+Dark-themed interface using tkinter (built into Python, no extra deps).
 """
 
 import sys
 import os
 import subprocess
 import socket
+import threading
+import tkinter as tk
+from tkinter import ttk
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QLabel, QLineEdit, QTextEdit, QComboBox,
-    QSpinBox, QDoubleSpinBox, QCheckBox, QGroupBox, QFrame, QTabWidget,
-    QGridLayout, QSizePolicy, QStatusBar,
-)
-from PySide6.QtCore import Qt, QTimer, QProcess
-from PySide6.QtGui import QFont, QIcon, QColor
-
 ROOT = Path(__file__).parent
 
-# ── Stylesheet ──────────────────────────────────────────────────────
+# ── Dark colour palette ─────────────────────────────────────────────
 
-DARK_STYLE = """
-QMainWindow, QWidget {
-    background-color: #1a1a2e;
-    color: #e0e0e0;
-    font-family: 'Segoe UI', 'Inter', 'Helvetica Neue', sans-serif;
-    font-size: 13px;
-}
-QGroupBox {
-    background-color: #16213e;
-    border: 1px solid #0f3460;
-    border-radius: 10px;
-    margin-top: 14px;
-    padding: 18px 14px 14px 14px;
-    font-weight: 600;
-    font-size: 14px;
-    color: #e94560;
-}
-QGroupBox::title {
-    subcontrol-origin: margin;
-    left: 16px;
-    padding: 0 8px;
-    color: #e94560;
-}
-QPushButton {
-    background-color: #0f3460;
-    color: #e0e0e0;
-    border: none;
-    border-radius: 8px;
-    padding: 10px 22px;
-    font-weight: 600;
-    font-size: 13px;
-    min-height: 20px;
-}
-QPushButton:hover {
-    background-color: #e94560;
-    color: #ffffff;
-}
-QPushButton:pressed {
-    background-color: #c81e45;
-}
-QPushButton:disabled {
-    background-color: #2a2a4a;
-    color: #555;
-}
-QPushButton#stopBtn {
-    background-color: #533;
-}
-QPushButton#stopBtn:hover {
-    background-color: #e94560;
-}
-QLineEdit, QSpinBox {
-    background-color: #0f3460;
-    border: 1px solid #1a4080;
-    border-radius: 6px;
-    padding: 8px 12px;
-    color: #e0e0e0;
-    font-size: 13px;
-    min-height: 18px;
-}
-QLineEdit:focus, QSpinBox:focus {
-    border: 1px solid #e94560;
-}
-QComboBox {
-    background-color: #0f3460;
-    border: 1px solid #1a4080;
-    border-radius: 6px;
-    padding: 8px 12px;
-    color: #e0e0e0;
-    min-height: 18px;
-}
-QComboBox::drop-down {
-    border: none;
-    width: 24px;
-}
-QComboBox QAbstractItemView {
-    background-color: #16213e;
-    color: #e0e0e0;
-    selection-background-color: #e94560;
-    border: 1px solid #0f3460;
-}
-QCheckBox {
-    spacing: 8px;
-    color: #e0e0e0;
-}
-QCheckBox::indicator {
-    width: 18px;
-    height: 18px;
-    border-radius: 4px;
-    border: 1px solid #0f3460;
-    background: #0f3460;
-}
-QCheckBox::indicator:checked {
-    background: #e94560;
-    border: 1px solid #e94560;
-}
-QTextEdit {
-    background-color: #0d1b2a;
-    border: 1px solid #1a4080;
-    border-radius: 8px;
-    padding: 10px;
-    color: #a0d0a0;
-    font-family: 'Cascadia Code', 'Consolas', 'Fira Code', monospace;
-    font-size: 12px;
-}
-QTabWidget::pane {
-    border: none;
-    background: #1a1a2e;
-}
-QTabBar::tab {
-    background: #16213e;
-    border: none;
-    border-top-left-radius: 8px;
-    border-top-right-radius: 8px;
-    padding: 10px 28px;
-    margin-right: 2px;
-    color: #999;
-    font-weight: 600;
-}
-QTabBar::tab:selected {
-    background: #0f3460;
-    color: #e94560;
-}
-QTabBar::tab:hover {
-    color: #e0e0e0;
-}
-QStatusBar {
-    background: #0d1b2a;
-    color: #777;
-    font-size: 11px;
-    border-top: 1px solid #1a4080;
-}
-QLabel#titleLabel {
-    font-size: 28px;
-    font-weight: 700;
-    color: #e94560;
-}
-QLabel#subtitleLabel {
-    font-size: 13px;
-    color: #777;
-    margin-bottom: 6px;
-}
-QLabel#statusDot {
-    font-size: 18px;
-}
-QFrame#separator {
-    background-color: #0f3460;
-    max-height: 1px;
-}
-"""
+BG_MAIN   = "#1a1a2e"
+BG_CARD   = "#16213e"
+BG_INPUT  = "#0f3460"
+BG_LOG    = "#0d1b2a"
+FG        = "#e0e0e0"
+FG_DIM    = "#777777"
+ACCENT    = "#e94560"
+GREEN     = "#4ade80"
+RED_DIM   = "#553333"
+BORDER    = "#1a4080"
 
 
 def get_local_ip() -> str:
-    """Get the machine's LAN IP address."""
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("8.8.8.8", 80))
@@ -186,253 +40,347 @@ def get_local_ip() -> str:
         return "127.0.0.1"
 
 
-class MainWindow(QMainWindow):
+class _Proc:
+    """Thin wrapper around subprocess.Popen with non-blocking output reading."""
+
+    def __init__(self, args: list[str], cwd: str, on_line, on_finish):
+        self._on_line = on_line
+        self._on_finish = on_finish
+        self.proc = subprocess.Popen(
+            args,
+            cwd=cwd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+            creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
+        )
+        self._reader = threading.Thread(target=self._read_loop, daemon=True)
+        self._reader.start()
+
+    def _read_loop(self):
+        try:
+            for line in self.proc.stdout:
+                self._on_line(line.rstrip("\n"))
+        except Exception:
+            pass
+        self.proc.wait()
+        self._on_finish()
+
+    def is_running(self) -> bool:
+        return self.proc.poll() is None
+
+    def terminate(self):
+        if self.is_running():
+            self.proc.terminate()
+
+    def kill(self):
+        if self.is_running():
+            self.proc.kill()
+
+
+class MainWindow:
     def __init__(self):
-        super().__init__()
-        self.setWindowTitle("my-hards")
-        self.setMinimumSize(680, 520)
-        self.resize(720, 560)
+        self.root = tk.Tk()
+        self.root.title("my-hards")
+        self.root.geometry("720x580")
+        self.root.minsize(680, 520)
+        self.root.configure(bg=BG_MAIN)
+        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
-        self.server_proc: QProcess | None = None
-        self.client_proc: QProcess | None = None
-
-        central = QWidget()
-        self.setCentralWidget(central)
-        root_layout = QVBoxLayout(central)
-        root_layout.setContentsMargins(24, 18, 24, 12)
-        root_layout.setSpacing(8)
-
-        # ── Header ──
-        header = QVBoxLayout()
-        header.setSpacing(2)
-
-        title = QLabel("my-hards")
-        title.setObjectName("titleLabel")
-        title.setAlignment(Qt.AlignCenter)
-        header.addWidget(title)
-
-        subtitle = QLabel("Share keyboard & mouse between PCs")
-        subtitle.setObjectName("subtitleLabel")
-        subtitle.setAlignment(Qt.AlignCenter)
-        header.addWidget(subtitle)
-
-        root_layout.addLayout(header)
-
-        # separator
-        sep = QFrame()
-        sep.setObjectName("separator")
-        sep.setFrameShape(QFrame.HLine)
-        root_layout.addWidget(sep)
-
-        # ── Tabs ──
-        tabs = QTabWidget()
-        tabs.addTab(self._build_connection_tab(), "Connection")
-        tabs.addTab(self._build_settings_tab(), "Settings")
-        root_layout.addWidget(tabs)
-
-        # ── Log ──
-        log_group = QGroupBox("Log")
-        log_layout = QVBoxLayout(log_group)
-        self.log = QTextEdit()
-        self.log.setReadOnly(True)
-        self.log.setMaximumHeight(150)
-        log_layout.addWidget(self.log)
-        root_layout.addWidget(log_group)
-
-        # ── Status bar ──
-        self.status_bar = QStatusBar()
-        self.setStatusBar(self.status_bar)
+        self.server_proc: _Proc | None = None
+        self.client_proc: _Proc | None = None
         self.local_ip = get_local_ip()
-        self.status_bar.showMessage(f"Local IP: {self.local_ip}  |  Ready")
 
-        # Timer to poll subprocess status
-        self._poll_timer = QTimer(self)
-        self._poll_timer.timeout.connect(self._poll_processes)
-        self._poll_timer.start(1500)
+        # Tkinter variables
+        self.port_var = tk.IntVar(value=24800)
+        self.edge_var = tk.StringVar(value="right")
+        self.margin_var = tk.IntVar(value=2)
+        self.speed_var = tk.DoubleVar(value=1.0)
+        self.clipboard_var = tk.BooleanVar(value=True)
+        self.heartbeat_var = tk.IntVar(value=5)
+        self.hotkey_var = tk.StringVar(value="<ctrl>+<alt>+s")
+        self.ip_var = tk.StringVar()
 
+        self._configure_styles()
+        self._build_ui()
         self._load_config_to_ui()
+        self._poll_processes()
 
-    # ── Connection Tab ──────────────────────────────────────────────
+    # ── Styles ──────────────────────────────────────────────────────
 
-    def _build_connection_tab(self) -> QWidget:
-        tab = QWidget()
-        layout = QVBoxLayout(tab)
-        layout.setSpacing(12)
+    def _configure_styles(self):
+        style = ttk.Style(self.root)
+        style.theme_use("clam")
 
-        # Server card
-        server_group = QGroupBox("Server Mode  (this PC shares keyboard & mouse)")
-        sg = QHBoxLayout(server_group)
+        style.configure(".", background=BG_MAIN, foreground=FG,
+                         font=("Segoe UI", 10))
+        style.configure("TFrame", background=BG_MAIN)
+        style.configure("Card.TFrame", background=BG_CARD)
+        style.configure("TLabel", background=BG_MAIN, foreground=FG,
+                         font=("Segoe UI", 10))
+        style.configure("Card.TLabel", background=BG_CARD, foreground=FG)
+        style.configure("Title.TLabel", background=BG_MAIN, foreground=ACCENT,
+                         font=("Segoe UI", 22, "bold"))
+        style.configure("Sub.TLabel", background=BG_MAIN, foreground=FG_DIM,
+                         font=("Segoe UI", 10))
+        style.configure("Section.TLabel", background=BG_CARD, foreground=ACCENT,
+                         font=("Segoe UI", 10, "bold"))
+        style.configure("Dot.TLabel", background=BG_CARD, font=("Segoe UI", 14))
+        style.configure("Status.TLabel", background=BG_LOG, foreground=FG_DIM,
+                         font=("Segoe UI", 9))
 
-        self.server_status = QLabel("\u2b24")  # filled circle
-        self.server_status.setObjectName("statusDot")
-        self.server_status.setStyleSheet("color: #555;")
-        self.server_status.setFixedWidth(28)
-        sg.addWidget(self.server_status)
+        # Buttons
+        style.configure("Accent.TButton", background=BG_INPUT, foreground=FG,
+                         font=("Segoe UI", 10, "bold"), padding=(14, 6))
+        style.map("Accent.TButton",
+                   background=[("active", ACCENT), ("disabled", "#2a2a4a")],
+                   foreground=[("active", "#fff"), ("disabled", "#555")])
 
-        self.server_status_label = QLabel("Stopped")
-        self.server_status_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        sg.addWidget(self.server_status_label)
+        style.configure("Stop.TButton", background=RED_DIM, foreground=FG,
+                         font=("Segoe UI", 10, "bold"), padding=(14, 6))
+        style.map("Stop.TButton",
+                   background=[("active", ACCENT), ("disabled", "#2a2a4a")],
+                   foreground=[("active", "#fff"), ("disabled", "#555")])
 
-        self.start_server_btn = QPushButton("\u25b6  Start Server")
-        self.start_server_btn.clicked.connect(self.start_server)
-        sg.addWidget(self.start_server_btn)
+        # Notebook tabs
+        style.configure("TNotebook", background=BG_MAIN, borderwidth=0)
+        style.configure("TNotebook.Tab", background=BG_CARD, foreground=FG_DIM,
+                         font=("Segoe UI", 10, "bold"), padding=(22, 8))
+        style.map("TNotebook.Tab",
+                   background=[("selected", BG_INPUT)],
+                   foreground=[("selected", ACCENT)])
 
-        self.stop_server_btn = QPushButton("\u25a0  Stop")
-        self.stop_server_btn.setObjectName("stopBtn")
-        self.stop_server_btn.setEnabled(False)
-        self.stop_server_btn.clicked.connect(self.stop_server)
-        sg.addWidget(self.stop_server_btn)
+        # Checkbutton
+        style.configure("TCheckbutton", background=BG_CARD, foreground=FG,
+                         font=("Segoe UI", 10))
+        style.map("TCheckbutton", background=[("active", BG_CARD)])
 
-        layout.addWidget(server_group)
+        # Combobox
+        style.configure("TCombobox", fieldbackground=BG_INPUT,
+                         background=BG_INPUT, foreground=FG,
+                         selectbackground=ACCENT, selectforeground="#fff")
+        style.map("TCombobox",
+                   fieldbackground=[("readonly", BG_INPUT)],
+                   foreground=[("readonly", FG)])
 
-        # Client card
-        client_group = QGroupBox("Client Mode  (this PC receives input)")
-        cg = QGridLayout(client_group)
+        # Spinbox
+        style.configure("TSpinbox", fieldbackground=BG_INPUT,
+                         background=BG_INPUT, foreground=FG)
 
-        self.client_status = QLabel("\u2b24")
-        self.client_status.setObjectName("statusDot")
-        self.client_status.setStyleSheet("color: #555;")
-        self.client_status.setFixedWidth(28)
-        cg.addWidget(self.client_status, 0, 0)
+        # Entry
+        style.configure("TEntry", fieldbackground=BG_INPUT, foreground=FG,
+                         insertcolor=FG)
 
-        self.client_status_label = QLabel("Disconnected")
-        cg.addWidget(self.client_status_label, 0, 1)
+        # LabelFrame
+        style.configure("Card.TLabelframe", background=BG_CARD,
+                         bordercolor=BG_INPUT, borderwidth=1)
+        style.configure("Card.TLabelframe.Label", background=BG_CARD,
+                         foreground=ACCENT, font=("Segoe UI", 10, "bold"))
 
-        ip_label = QLabel("Server IP:")
-        cg.addWidget(ip_label, 1, 0, 1, 1, Qt.AlignRight)
+    # ── Build UI ────────────────────────────────────────────────────
 
-        self.ip_input = QLineEdit()
-        self.ip_input.setPlaceholderText("e.g. 192.168.1.100")
-        self.ip_input.returnPressed.connect(self.start_client)
-        cg.addWidget(self.ip_input, 1, 1)
+    def _build_ui(self):
+        pad = {"padx": 16, "pady": 4}
 
-        self.start_client_btn = QPushButton("\u25b6  Connect")
-        self.start_client_btn.clicked.connect(self.start_client)
-        cg.addWidget(self.start_client_btn, 1, 2)
+        # Header
+        ttk.Label(self.root, text="my-hards", style="Title.TLabel")\
+            .pack(pady=(14, 0))
+        ttk.Label(self.root, text="Share keyboard & mouse between PCs",
+                  style="Sub.TLabel").pack()
 
-        self.stop_client_btn = QPushButton("\u25a0  Stop")
-        self.stop_client_btn.setObjectName("stopBtn")
-        self.stop_client_btn.setEnabled(False)
-        self.stop_client_btn.clicked.connect(self.stop_client)
-        cg.addWidget(self.stop_client_btn, 1, 3)
+        ttk.Separator(self.root).pack(fill="x", padx=20, pady=6)
 
-        layout.addWidget(client_group)
-        layout.addStretch()
+        # Notebook
+        nb = ttk.Notebook(self.root)
+        nb.pack(fill="both", expand=True, padx=16, pady=(0, 4))
+
+        nb.add(self._build_connection_tab(nb), text="  Connection  ")
+        nb.add(self._build_settings_tab(nb), text="  Settings  ")
+
+        # Log
+        log_frame = ttk.LabelFrame(self.root, text="Log",
+                                    style="Card.TLabelframe")
+        log_frame.pack(fill="both", padx=16, pady=(0, 4))
+
+        self.log_text = tk.Text(log_frame, height=7, bg=BG_LOG, fg="#a0d0a0",
+                                 insertbackground=FG, font=("Consolas", 9),
+                                 borderwidth=0, highlightthickness=0,
+                                 state="disabled", wrap="word")
+        self.log_text.pack(fill="both", expand=True, padx=6, pady=6)
+
+        # Status bar
+        self.status_label = ttk.Label(self.root, style="Status.TLabel",
+                                       anchor="w")
+        self.status_label.pack(fill="x", side="bottom", ipady=3, padx=1)
+        self._update_status_bar()
+
+    def _build_connection_tab(self, parent) -> ttk.Frame:
+        tab = ttk.Frame(parent)
+
+        # ── Server card ──
+        srv = ttk.LabelFrame(tab,
+                              text="  Server Mode  (this PC shares keyboard & mouse)  ",
+                              style="Card.TLabelframe")
+        srv.pack(fill="x", padx=8, pady=(10, 4))
+        srv_inner = ttk.Frame(srv, style="Card.TFrame")
+        srv_inner.pack(fill="x", padx=8, pady=8)
+
+        self.server_dot = ttk.Label(srv_inner, text="\u2b24",
+                                     style="Dot.TLabel", foreground="#555")
+        self.server_dot.pack(side="left")
+
+        self.server_status_lbl = ttk.Label(srv_inner, text="Stopped",
+                                            style="Card.TLabel")
+        self.server_status_lbl.pack(side="left", padx=(6, 0), fill="x", expand=True)
+
+        self.stop_server_btn = ttk.Button(srv_inner, text="\u25a0  Stop",
+                                           style="Stop.TButton",
+                                           command=self.stop_server,
+                                           state="disabled")
+        self.stop_server_btn.pack(side="right", padx=(4, 0))
+
+        self.start_server_btn = ttk.Button(srv_inner, text="\u25b6  Start Server",
+                                            style="Accent.TButton",
+                                            command=self.start_server)
+        self.start_server_btn.pack(side="right")
+
+        # ── Client card ──
+        cli = ttk.LabelFrame(tab,
+                              text="  Client Mode  (this PC receives input)  ",
+                              style="Card.TLabelframe")
+        cli.pack(fill="x", padx=8, pady=(4, 4))
+
+        row0 = ttk.Frame(cli, style="Card.TFrame")
+        row0.pack(fill="x", padx=8, pady=(8, 2))
+
+        self.client_dot = ttk.Label(row0, text="\u2b24",
+                                     style="Dot.TLabel", foreground="#555")
+        self.client_dot.pack(side="left")
+
+        self.client_status_lbl = ttk.Label(row0, text="Disconnected",
+                                            style="Card.TLabel")
+        self.client_status_lbl.pack(side="left", padx=(6, 0))
+
+        row1 = ttk.Frame(cli, style="Card.TFrame")
+        row1.pack(fill="x", padx=8, pady=(2, 8))
+
+        ttk.Label(row1, text="Server IP:", style="Card.TLabel")\
+            .pack(side="left")
+
+        self.ip_entry = ttk.Entry(row1, textvariable=self.ip_var, width=18)
+        self.ip_entry.pack(side="left", padx=(6, 6))
+        self.ip_entry.bind("<Return>", lambda _: self.start_client())
+
+        self.start_client_btn = ttk.Button(row1, text="\u25b6  Connect",
+                                            style="Accent.TButton",
+                                            command=self.start_client)
+        self.start_client_btn.pack(side="left")
+
+        self.stop_client_btn = ttk.Button(row1, text="\u25a0  Stop",
+                                           style="Stop.TButton",
+                                           command=self.stop_client,
+                                           state="disabled")
+        self.stop_client_btn.pack(side="left", padx=(4, 0))
+
         return tab
 
-    # ── Settings Tab ────────────────────────────────────────────────
+    def _build_settings_tab(self, parent) -> ttk.Frame:
+        tab = ttk.Frame(parent)
 
-    def _build_settings_tab(self) -> QWidget:
-        tab = QWidget()
-        layout = QVBoxLayout(tab)
+        cfg = ttk.LabelFrame(tab, text="  Configuration  ",
+                              style="Card.TLabelframe")
+        cfg.pack(fill="x", padx=8, pady=(10, 4))
 
-        settings_group = QGroupBox("Configuration")
-        grid = QGridLayout(settings_group)
-        grid.setHorizontalSpacing(16)
-        grid.setVerticalSpacing(10)
+        grid = ttk.Frame(cfg, style="Card.TFrame")
+        grid.pack(fill="x", padx=12, pady=10)
 
-        row = 0
-        grid.addWidget(QLabel("Port:"), row, 0, Qt.AlignRight)
-        self.port_spin = QSpinBox()
-        self.port_spin.setRange(1024, 65535)
-        self.port_spin.setValue(24800)
-        grid.addWidget(self.port_spin, row, 1)
+        rows = [
+            ("Port:", self._make_spinbox(grid, self.port_var, 1024, 65535)),
+            ("Switch edge:", self._make_combobox(grid, self.edge_var,
+                                                  ["right", "left", "top", "bottom"])),
+            ("Switch margin (px):", self._make_spinbox(grid, self.margin_var, 1, 50)),
+            ("Client pointer speed:", self._make_spinbox_float(grid, self.speed_var,
+                                                                0.10, 4.00, 0.10)),
+            ("Heartbeat interval (sec):", self._make_spinbox(grid, self.heartbeat_var,
+                                                              1, 60)),
+            ("Switch hotkey:", self._make_entry(grid, self.hotkey_var)),
+        ]
+        for i, (label, widget) in enumerate(rows):
+            ttk.Label(grid, text=label, style="Card.TLabel")\
+                .grid(row=i, column=0, sticky="e", padx=(0, 10), pady=4)
+            widget.grid(row=i, column=1, sticky="w", pady=4)
 
-        row += 1
-        grid.addWidget(QLabel("Switch edge:"), row, 0, Qt.AlignRight)
-        self.edge_combo = QComboBox()
-        self.edge_combo.addItems(["right", "left", "top", "bottom"])
-        grid.addWidget(self.edge_combo, row, 1)
+        # Clipboard checkbox
+        self.clip_check = ttk.Checkbutton(grid, text="Sync clipboard between PCs",
+                                           variable=self.clipboard_var)
+        self.clip_check.grid(row=len(rows), column=0, columnspan=2,
+                              sticky="w", pady=4)
 
-        row += 1
-        grid.addWidget(QLabel("Switch margin (px):"), row, 0, Qt.AlignRight)
-        self.margin_spin = QSpinBox()
-        self.margin_spin.setRange(1, 50)
-        self.margin_spin.setValue(2)
-        grid.addWidget(self.margin_spin, row, 1)
+        # Hotkey hint
+        hint = ttk.Label(grid, text="Hotkey format: <ctrl>, <alt>, <shift> + letter",
+                          style="Card.TLabel", foreground=FG_DIM,
+                          font=("Segoe UI", 8))
+        hint.grid(row=len(rows) - 1, column=2, sticky="w", padx=(8, 0))
 
-        row += 1
-        grid.addWidget(QLabel("Client pointer speed:"), row, 0, Qt.AlignRight)
-        self.pointer_speed_spin = QDoubleSpinBox()
-        self.pointer_speed_spin.setRange(0.10, 4.00)
-        self.pointer_speed_spin.setSingleStep(0.10)
-        self.pointer_speed_spin.setDecimals(2)
-        self.pointer_speed_spin.setValue(1.0)
-        self.pointer_speed_spin.setSuffix("x")
-        grid.addWidget(self.pointer_speed_spin, row, 1)
+        # Buttons
+        btn_row = ttk.Frame(tab)
+        btn_row.pack(fill="x", padx=8, pady=(4, 8))
 
-        row += 1
-        self.clipboard_check = QCheckBox("Sync clipboard between PCs")
-        self.clipboard_check.setChecked(True)
-        grid.addWidget(self.clipboard_check, row, 0, 1, 2)
+        ttk.Button(btn_row, text="Reset defaults", style="Accent.TButton",
+                    command=self.reset_config).pack(side="right", padx=(4, 0))
+        ttk.Button(btn_row, text="Save config.json", style="Accent.TButton",
+                    command=self.save_config).pack(side="right")
 
-        row += 1
-        grid.addWidget(QLabel("Heartbeat interval (sec):"), row, 0, Qt.AlignRight)
-        self.heartbeat_spin = QSpinBox()
-        self.heartbeat_spin.setRange(1, 60)
-        self.heartbeat_spin.setValue(5)
-        grid.addWidget(self.heartbeat_spin, row, 1)
-
-        row += 1
-        grid.addWidget(QLabel("Switch hotkey:"), row, 0, Qt.AlignRight)
-        self.hotkey_input = QLineEdit()
-        self.hotkey_input.setPlaceholderText("e.g. <ctrl>+<alt>+s")
-        self.hotkey_input.setText("<ctrl>+<alt>+s")
-        grid.addWidget(self.hotkey_input, row, 1)
-        hotkey_hint = QLabel("Format: <ctrl>, <alt>, <shift> + letter")
-        hotkey_hint.setStyleSheet("color: #666; font-size: 11px;")
-        grid.addWidget(hotkey_hint, row + 1, 1)
-
-        layout.addWidget(settings_group)
-
-        # Save / Reset row
-        btn_row = QHBoxLayout()
-        btn_row.addStretch()
-
-        save_btn = QPushButton("Save config.json")
-        save_btn.clicked.connect(self.save_config)
-        btn_row.addWidget(save_btn)
-
-        reset_btn = QPushButton("Reset defaults")
-        reset_btn.clicked.connect(self.reset_config)
-        btn_row.addWidget(reset_btn)
-
-        layout.addLayout(btn_row)
-        layout.addStretch()
         return tab
+
+    # ── Widget factories ────────────────────────────────────────────
+
+    def _make_spinbox(self, parent, var, lo, hi):
+        sb = ttk.Spinbox(parent, from_=lo, to=hi, textvariable=var, width=10)
+        return sb
+
+    def _make_spinbox_float(self, parent, var, lo, hi, step):
+        sb = ttk.Spinbox(parent, from_=lo, to=hi, increment=step,
+                          textvariable=var, width=10, format="%.2f")
+        return sb
+
+    def _make_combobox(self, parent, var, values):
+        cb = ttk.Combobox(parent, textvariable=var, values=values,
+                           state="readonly", width=10)
+        return cb
+
+    def _make_entry(self, parent, var):
+        return ttk.Entry(parent, textvariable=var, width=18)
 
     # ── Config helpers ──────────────────────────────────────────────
 
     def _load_config_to_ui(self):
         from config import load_config
         cfg = load_config()
-        self.port_spin.setValue(cfg.get("port", 24800))
-        edge = cfg.get("switch_edge", "right")
-        idx = self.edge_combo.findText(edge)
-        if idx >= 0:
-            self.edge_combo.setCurrentIndex(idx)
-        self.margin_spin.setValue(cfg.get("switch_margin", 2))
-        self.pointer_speed_spin.setValue(float(cfg.get("client_pointer_speed", 1.0)))
-        self.clipboard_check.setChecked(cfg.get("clipboard_sync", True))
-        self.heartbeat_spin.setValue(cfg.get("heartbeat_interval", 5))
-        self.hotkey_input.setText(cfg.get("switch_hotkey", "<ctrl>+<alt>+s"))
-        # Restore last used server IP
+        self.port_var.set(cfg.get("port", 24800))
+        self.edge_var.set(cfg.get("switch_edge", "right"))
+        self.margin_var.set(cfg.get("switch_margin", 2))
+        self.speed_var.set(float(cfg.get("client_pointer_speed", 1.0)))
+        self.clipboard_var.set(cfg.get("clipboard_sync", True))
+        self.heartbeat_var.set(cfg.get("heartbeat_interval", 5))
+        self.hotkey_var.set(cfg.get("switch_hotkey", "<ctrl>+<alt>+s"))
         last_ip = cfg.get("last_server_ip", "")
         if last_ip:
-            self.ip_input.setText(last_ip)
+            self.ip_var.set(last_ip)
 
     def _ui_to_config(self) -> dict:
         return {
-            "port": self.port_spin.value(),
-            "switch_edge": self.edge_combo.currentText(),
-            "switch_margin": self.margin_spin.value(),
+            "port": self.port_var.get(),
+            "switch_edge": self.edge_var.get(),
+            "switch_margin": self.margin_var.get(),
             "client_screen_width": 1920,
             "client_screen_height": 1080,
-            "client_pointer_speed": self.pointer_speed_spin.value(),
-            "clipboard_sync": self.clipboard_check.isChecked(),
-            "heartbeat_interval": self.heartbeat_spin.value(),
-            "switch_hotkey": self.hotkey_input.text().strip() or "<ctrl>+<alt>+s",
-            "last_server_ip": self.ip_input.text().strip(),
+            "client_pointer_speed": self.speed_var.get(),
+            "clipboard_sync": self.clipboard_var.get(),
+            "heartbeat_interval": self.heartbeat_var.get(),
+            "switch_hotkey": self.hotkey_var.get().strip() or "<ctrl>+<alt>+s",
+            "last_server_ip": self.ip_var.get().strip(),
         }
 
     def save_config(self):
@@ -449,79 +397,59 @@ class MainWindow(QMainWindow):
     # ── Process management ──────────────────────────────────────────
 
     def start_server(self):
-        if self.server_proc and self.server_proc.state() != QProcess.NotRunning:
+        if self.server_proc and self.server_proc.is_running():
             return
-        self.save_config()  # persist current settings before starting
-        self.server_proc = QProcess(self)
-        self.server_proc.setWorkingDirectory(str(ROOT))
-        self.server_proc.readyReadStandardOutput.connect(
-            lambda: self._read_output(self.server_proc, "SERVER")
+        self.save_config()
+        self.server_proc = _Proc(
+            [sys.executable, str(ROOT / "server.py")],
+            cwd=str(ROOT),
+            on_line=lambda line: self.root.after(0, self._log, f"[SERVER] {line}"),
+            on_finish=lambda: self.root.after(0, self._on_server_finished),
         )
-        self.server_proc.readyReadStandardError.connect(
-            lambda: self._read_stderr(self.server_proc, "SERVER")
-        )
-        self.server_proc.finished.connect(self._on_server_finished)
-        self.server_proc.start(sys.executable, [str(ROOT / "server.py")])
         self._set_server_state(True)
         self._log("Server starting...")
 
     def stop_server(self):
-        if self.server_proc and self.server_proc.state() != QProcess.NotRunning:
+        if self.server_proc and self.server_proc.is_running():
             self._log("Server stopping...")
-            self.stop_server_btn.setEnabled(False)
+            self.stop_server_btn.configure(state="disabled")
             self.server_proc.terminate()
-            QTimer.singleShot(1500, self._force_kill_server)
+            self.root.after(1500, self._force_kill_server)
 
     def _force_kill_server(self):
-        if self.server_proc and self.server_proc.state() != QProcess.NotRunning:
+        if self.server_proc and self.server_proc.is_running():
             self.server_proc.kill()
 
     def start_client(self):
-        ip = self.ip_input.text().strip()
+        ip = self.ip_var.get().strip()
         if not ip:
             self._log("ERROR: Enter the server IP address first")
-            self.ip_input.setFocus()
+            self.ip_entry.focus_set()
             return
-        if self.client_proc and self.client_proc.state() != QProcess.NotRunning:
+        if self.client_proc and self.client_proc.is_running():
             return
         self.save_config()
-        self.client_proc = QProcess(self)
-        self.client_proc.setWorkingDirectory(str(ROOT))
-        self.client_proc.readyReadStandardOutput.connect(
-            lambda: self._read_output(self.client_proc, "CLIENT")
+        self.client_proc = _Proc(
+            [sys.executable, str(ROOT / "client.py"), ip],
+            cwd=str(ROOT),
+            on_line=lambda line: self.root.after(0, self._log, f"[CLIENT] {line}"),
+            on_finish=lambda: self.root.after(0, self._on_client_finished),
         )
-        self.client_proc.readyReadStandardError.connect(
-            lambda: self._read_stderr(self.client_proc, "CLIENT")
-        )
-        self.client_proc.finished.connect(self._on_client_finished)
-        self.client_proc.start(sys.executable, [str(ROOT / "client.py"), ip])
         self._set_client_state(True)
         self._log(f"Client connecting to {ip}...")
 
     def stop_client(self):
-        if self.client_proc and self.client_proc.state() != QProcess.NotRunning:
+        if self.client_proc and self.client_proc.is_running():
             self._log("Client stopping...")
-            self.stop_client_btn.setEnabled(False)
+            self.stop_client_btn.configure(state="disabled")
             self.client_proc.terminate()
-            QTimer.singleShot(1500, self._force_kill_client)
+            self.root.after(1500, self._force_kill_client)
 
     def _force_kill_client(self):
-        if self.client_proc and self.client_proc.state() != QProcess.NotRunning:
+        if self.client_proc and self.client_proc.is_running():
             self.client_proc.kill()
 
-    # ── QProcess callbacks ──────────────────────────────────────────
-
-    def _read_output(self, proc: QProcess, prefix: str):
-        data = proc.readAllStandardOutput().data().decode(errors="replace").strip()
-        if data:
-            for line in data.splitlines():
-                self._log(f"[{prefix}] {line}")
-
-    def _read_stderr(self, proc: QProcess, prefix: str):
-        data = proc.readAllStandardError().data().decode(errors="replace").strip()
-        if data:
-            for line in data.splitlines():
-                self._log(f"[{prefix}] {line}")
+    # ── Process callbacks ───────────────────────────────────────────
 
     def _on_server_finished(self):
         self._set_server_state(False)
@@ -534,68 +462,70 @@ class MainWindow(QMainWindow):
     # ── UI state helpers ────────────────────────────────────────────
 
     def _set_server_state(self, running: bool):
-        self.start_server_btn.setEnabled(not running)
-        self.stop_server_btn.setEnabled(running)
-        color = "#4ade80" if running else "#555"
-        text = "Running — waiting for client..." if running else "Stopped"
-        self.server_status.setStyleSheet(f"color: {color};")
-        self.server_status_label.setText(text)
+        self.start_server_btn.configure(
+            state="disabled" if running else "normal")
+        self.stop_server_btn.configure(
+            state="normal" if running else "disabled")
+        self.server_dot.configure(foreground=GREEN if running else "#555")
+        self.server_status_lbl.configure(
+            text="Running \u2014 waiting for client..." if running else "Stopped")
         self._update_status_bar()
 
     def _set_client_state(self, running: bool):
-        self.start_client_btn.setEnabled(not running)
-        self.stop_client_btn.setEnabled(running)
-        self.ip_input.setEnabled(not running)
-        color = "#4ade80" if running else "#555"
-        text = "Connected" if running else "Disconnected"
-        self.client_status.setStyleSheet(f"color: {color};")
-        self.client_status_label.setText(text)
+        self.start_client_btn.configure(
+            state="disabled" if running else "normal")
+        self.stop_client_btn.configure(
+            state="normal" if running else "disabled")
+        self.ip_entry.configure(state="disabled" if running else "normal")
+        self.client_dot.configure(foreground=GREEN if running else "#555")
+        self.client_status_lbl.configure(
+            text="Connected" if running else "Disconnected")
         self._update_status_bar()
 
     def _update_status_bar(self):
         parts = [f"Local IP: {self.local_ip}"]
-        srv = self.server_proc and self.server_proc.state() != QProcess.NotRunning
-        cli = self.client_proc and self.client_proc.state() != QProcess.NotRunning
+        srv = self.server_proc and self.server_proc.is_running()
+        cli = self.client_proc and self.client_proc.is_running()
         if srv:
             parts.append("Server: ON")
         if cli:
             parts.append("Client: ON")
         if not srv and not cli:
             parts.append("Ready")
-        self.status_bar.showMessage("  |  ".join(parts))
+        self.status_label.configure(text="  |  ".join(parts))
 
     def _poll_processes(self):
-        """Periodically refresh button states in case a process died."""
-        if self.server_proc and self.server_proc.state() == QProcess.NotRunning:
-            if not self.start_server_btn.isEnabled():
+        if self.server_proc and not self.server_proc.is_running():
+            if str(self.start_server_btn.cget("state")) == "disabled":
                 self._set_server_state(False)
-        if self.client_proc and self.client_proc.state() == QProcess.NotRunning:
-            if not self.start_client_btn.isEnabled():
+        if self.client_proc and not self.client_proc.is_running():
+            if str(self.start_client_btn.cget("state")) == "disabled":
                 self._set_client_state(False)
+        self.root.after(1500, self._poll_processes)
 
     def _log(self, text: str):
         ts = datetime.now().strftime("%H:%M:%S")
-        self.log.append(f"<span style='color:#555'>[{ts}]</span> {text}")
+        self.log_text.configure(state="normal")
+        self.log_text.insert("end", f"[{ts}] {text}\n")
+        self.log_text.see("end")
+        self.log_text.configure(state="disabled")
 
     # ── Window close ────────────────────────────────────────────────
 
-    def closeEvent(self, event):
-        # Auto-save all settings and IP before closing
+    def _on_close(self):
         self.save_config()
         for proc in (self.client_proc, self.server_proc):
-            if proc and proc.state() != QProcess.NotRunning:
-                proc.kill()   # kill immediately on close — no grace period
-                proc.waitForFinished(1000)
-        event.accept()
+            if proc and proc.is_running():
+                proc.kill()
+        self.root.destroy()
+
+    def run(self):
+        self.root.mainloop()
 
 
 def main():
-    app = QApplication(sys.argv)
-    app.setStyle("Fusion")
-    app.setStyleSheet(DARK_STYLE)
-    window = MainWindow()
-    window.show()
-    sys.exit(app.exec())
+    app = MainWindow()
+    app.run()
 
 
 if __name__ == "__main__":
