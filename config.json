@@ -1,0 +1,9 @@
+{
+  "port": 24800,
+  "switch_edge": "right",
+  "switch_margin": 2,
+  "client_screen_width": 1920,
+  "client_screen_height": 1080,
+  "clipboard_sync": true,
+  "heartbeat_interval": 5
+}
