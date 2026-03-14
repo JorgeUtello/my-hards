@@ -65,6 +65,12 @@ class Client:
         self.sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         log.info("Connected!")
 
+        # Immediately tell the server our screen dimensions
+        self._send(MessageType.CLIENT_INFO, {
+            "screen_w": self.screen_w,
+            "screen_h": self.screen_h,
+        })
+
         self._receive_loop()
 
     def _send(self, msg_type: MessageType, data: dict = None):
@@ -156,8 +162,15 @@ class Client:
         if not self.active:
             return
         self.active = False
-        log.info("→ Input returned to SERVER")
-        self._send(MessageType.SWITCH_TO_SERVER)
+        # Send current cursor position so server can map it proportionally
+        cx, cy = self.mouse.position
+        log.info("→ Input returned to SERVER (cursor at %d,%d)", cx, cy)
+        self._send(MessageType.SWITCH_TO_SERVER, {
+            "cursor_x": cx,
+            "cursor_y": cy,
+            "screen_w": self.screen_w,
+            "screen_h": self.screen_h,
+        })
 
     # ── Mouse handlers ──────────────────────────────────────────────
 

@@ -20,6 +20,7 @@ class MessageType(str, Enum):
     CLIPBOARD_SYNC = "clipboard_sync"
     HEARTBEAT = "heartbeat"
     HELLO = "hello"
+    CLIENT_INFO = "client_info"  # client sends its screen dimensions to server
 
 
 def encode_message(msg_type: MessageType, data: dict = None) -> bytes:

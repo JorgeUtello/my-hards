@@ -41,7 +41,16 @@ class Server:
         # Center anchor for relay mode (warp-to-center technique)
         self._cx = self.screen_w // 2
         self._cy = self.screen_h // 2
-        self._repositioning = False  # prevents re-entrant warp callbacks
+        # Time-based warp guard (replaces unreliable bool flag)
+        self._warp_time = 0.0          # monotonic time of last programmatic warp
+        self._WARP_GRACE = 0.08        # seconds to ignore moves after a warp
+        # Cooldown after switching back to server (prevents instant re-trigger)
+        self._switch_back_until = 0.0
+        self._SWITCH_BACK_GRACE = 0.6  # seconds
+
+        # Client screen dimensions (received via CLIENT_INFO message)
+        self.client_screen_w = config.get("client_screen_width", 1920)
+        self.client_screen_h = config.get("client_screen_height", 1080)
 
         # Hotkey suppression: don't forward keys for a short window after hotkey fires
         self._suppress_until = 0.0
@@ -99,9 +108,15 @@ class Server:
                 log.warning("Client disconnected")
                 self.running = False
                 break
-            if msg.get("type") == MessageType.SWITCH_TO_SERVER:
-                self._switch_to_server()
-            elif msg.get("type") == MessageType.CLIPBOARD_SYNC:
+            msg_type = msg.get("type")
+            if msg_type == MessageType.CLIENT_INFO:
+                data = msg.get("data", {})
+                self.client_screen_w = data.get("screen_w", self.client_screen_w)
+                self.client_screen_h = data.get("screen_h", self.client_screen_h)
+                log.info("Client screen: %dx%d", self.client_screen_w, self.client_screen_h)
+            elif msg_type == MessageType.SWITCH_TO_SERVER:
+                self._switch_to_server(msg.get("data", {}))
+            elif msg_type == MessageType.CLIPBOARD_SYNC:
                 self._handle_clipboard(msg.get("data", {}))
 
     def _heartbeat_loop(self):
@@ -122,18 +137,47 @@ class Server:
             "edge": self.switch_edge,
         })
         # Warp cursor to center so future moves always produce non-zero deltas
-        self._repositioning = True
+        self._warp_time = time.monotonic()
         self.mouse_ctrl.position = (self._cx, self._cy)
-        self._repositioning = False
 
-    def _switch_to_server(self):
+    def _switch_to_server(self, data: dict = None):
         """Called when client signals the cursor came back."""
         if not self.active:
             return
         self.active = False
-        log.info("← Switched back to SERVER")
-        opp = opposite_edge(self.switch_edge)
-        lock_cursor_to_edge(opp, self.screen_w, self.screen_h)
+
+        # Map client cursor position proportionally onto server screen
+        if data:
+            cli_x = data.get("cursor_x", self.client_screen_w // 2)
+            cli_y = data.get("cursor_y", self.client_screen_h // 2)
+        else:
+            cli_x = self.client_screen_w // 2
+            cli_y = self.client_screen_h // 2
+
+        pct_x = cli_x / max(1, self.client_screen_w)
+        pct_y = cli_y / max(1, self.client_screen_h)
+        target_x = int(pct_x * self.screen_w)
+        target_y = int(pct_y * self.screen_h)
+
+        # Keep cursor away from the switch edge so we don't immediately re-trigger
+        safe_margin = 80
+        if self.switch_edge == "right":
+            target_x = min(target_x, self.screen_w - safe_margin)
+        elif self.switch_edge == "left":
+            target_x = max(target_x, safe_margin)
+        elif self.switch_edge == "bottom":
+            target_y = min(target_y, self.screen_h - safe_margin)
+        elif self.switch_edge == "top":
+            target_y = max(target_y, safe_margin)
+
+        target_x = max(0, min(self.screen_w - 1, target_x))
+        target_y = max(0, min(self.screen_h - 1, target_y))
+
+        # Set cooldown BEFORE warping so the warp callback is suppressed
+        self._switch_back_until = time.monotonic() + self._SWITCH_BACK_GRACE
+        self._warp_time = time.monotonic()
+        self.mouse_ctrl.position = (target_x, target_y)
+        log.info("← Switched back to SERVER, cursor at (%d, %d)", target_x, target_y)
 
     # ── Clipboard ───────────────────────────────────────────────────
 
@@ -192,11 +236,14 @@ class Server:
             self._switch_to_client()
 
     def _on_mouse_move(self, x: int, y: int):
-        # Ignore callbacks triggered by our own re-centering warp
-        if self._repositioning:
+        # Ignore move events shortly after any programmatic warp (time-based, thread-safe)
+        if time.monotonic() - self._warp_time < self._WARP_GRACE:
             return
 
         if not self.active:
+            # Don't detect edge during switch-back cooldown
+            if time.monotonic() < self._switch_back_until:
+                return
             if is_at_edge(x, y, self.switch_edge, self.screen_w, self.screen_h, self.margin):
                 self._switch_to_client()
             return
@@ -208,9 +255,8 @@ class Server:
         if dx != 0 or dy != 0:
             self._send(MessageType.MOUSE_MOVE, {"dx": dx, "dy": dy})
             # Warp back to center so every move is measurable
-            self._repositioning = True
+            self._warp_time = time.monotonic()
             self.mouse_ctrl.position = (self._cx, self._cy)
-            self._repositioning = False
 
     def _on_mouse_click(self, x, y, button, pressed):
         if not self.active:
