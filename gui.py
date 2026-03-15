@@ -10,6 +10,7 @@ import socket
 import threading
 import tkinter as tk
 from tkinter import ttk
+import ttkbootstrap as tb
 from datetime import datetime
 from pathlib import Path
 
@@ -84,7 +85,11 @@ class _Proc:
 
 class MainWindow:
     def __init__(self):
-        self.root = tk.Tk()
+        # Use ttkbootstrap Window for a modern theme (dark by default)
+        try:
+            self.root = tb.Window(themename="darkly")
+        except Exception:
+            self.root = tk.Tk()
         self.root.title("my-hards")
         self.root.geometry("800x700")
         self.root.minsize(720, 600)
@@ -117,22 +122,34 @@ class MainWindow:
     # ── Styles ──────────────────────────────────────────────────────
 
     def _configure_styles(self):
-        style = ttk.Style(self.root)
-        style.theme_use("clam")
+        # Prefer ttkbootstrap Style for nicer defaults; fallback to ttk.Style
+        try:
+            style = tb.Style()
+        except Exception:
+            style = ttk.Style(self.root)
+            style.theme_use("clam")
 
         # Base ttk (used only for Notebook)
         style.configure(".", background=BG_MAIN, foreground=FG,
-                         font=("Segoe UI", 10))
+                         font=("Segoe UI", 11))
         style.configure("TFrame", background=BG_MAIN)
         style.configure("TLabel", background=BG_MAIN, foreground=FG)
 
-        # Notebook tabs
+        # Notebook tabs — smaller padding and fixed minimum width so tabs match
         style.configure("TNotebook", background=BG_MAIN, borderwidth=0)
-        style.configure("TNotebook.Tab", background=BG_CARD, foreground=FG_DIM,
-                         font=("Segoe UI", 10, "bold"), padding=(26, 9))
-        style.map("TNotebook.Tab",
-                   background=[("selected", BG_INPUT)],
-                   foreground=[("selected", ACCENT)])
+        style.configure(
+            "TNotebook.Tab",
+            background=BG_CARD,
+            foreground=FG_DIM,
+            font=("Segoe UI", 11, "bold"),
+            padding=(16, 8),
+            minwidth=160,
+        )
+        style.map(
+            "TNotebook.Tab",
+            background=[("selected", BG_INPUT)],
+            foreground=[("selected", ACCENT)],
+        )
 
     # ── Native-tk widget helpers (full dark-colour control) ─────────
 
@@ -143,9 +160,9 @@ class MainWindow:
             bg=bg or BG_INPUT, fg=FG,
             activebackground=ACCENT, activeforeground="#ffffff",
             disabledforeground="#555555",
-            font=("Segoe UI", 10, "bold"),
+            font=("Segoe UI", 11, "bold"),
             relief="flat", bd=0, cursor="hand2",
-            padx=18, pady=8,
+            padx=18, pady=10,
         )
         if state == "disabled":
             b.configure(state="disabled", bg="#252545")
@@ -156,7 +173,7 @@ class MainWindow:
             parent, textvariable=textvariable, width=width,
             bg=BG_INPUT, fg=FG, insertbackground=FG,
             relief="flat", bd=6,
-            font=("Segoe UI", 10),
+            font=("Segoe UI", 11),
             highlightthickness=1, highlightbackground=BORDER,
             highlightcolor=ACCENT,
         )
@@ -167,7 +184,7 @@ class MainWindow:
             bg=BG_INPUT, fg=FG, insertbackground=FG,
             buttonbackground=BG_INPUT,
             relief="flat", bd=4,
-            font=("Segoe UI", 10),
+            font=("Segoe UI", 11),
             highlightthickness=1, highlightbackground=BORDER,
             highlightcolor=ACCENT,
             increment=step,
@@ -182,7 +199,7 @@ class MainWindow:
             bg=BG_INPUT, fg=FG,
             activebackground=ACCENT, activeforeground="#fff",
             relief="flat", bd=0,
-            font=("Segoe UI", 10),
+            font=("Segoe UI", 11),
             highlightthickness=1, highlightbackground=BORDER,
             indicatoron=True, width=10,
         )
@@ -207,7 +224,7 @@ class MainWindow:
         return tk.Label(
             parent, text=text,
             bg=bg or BG_CARD, fg=fg or FG,
-            font=font or ("Segoe UI", 10),
+            font=font or ("Segoe UI", 11),
         )
 
     def _checkbutton(self, parent, text, variable):
@@ -216,35 +233,42 @@ class MainWindow:
             bg=BG_CARD, fg=FG,
             activebackground=BG_CARD, activeforeground=FG,
             selectcolor=BG_INPUT,
-            font=("Segoe UI", 10),
+            font=("Segoe UI", 11),
             relief="flat", bd=0,
         )
 
     # ── Build UI ────────────────────────────────────────────────────
 
     def _build_ui(self):
-        # Header
-        tk.Label(self.root, text="my-hards", bg=BG_MAIN, fg=ACCENT,
-                  font=("Segoe UI", 26, "bold")).pack(pady=(16, 0))
-        tk.Label(self.root, text="Share keyboard & mouse between PCs",
-                  bg=BG_MAIN, fg=FG_DIM, font=("Segoe UI", 10)).pack(pady=(0, 4))
+        # Status bar — packed first so it reserves space at the bottom
+        self.status_label = tk.Label(
+            self.root, anchor="w",
+            bg=BG_LOG, fg=FG_DIM, font=("Segoe UI", 10),
+        )
+        self.status_label.pack(fill="x", side="bottom", ipady=4)
 
-        tk.Frame(self.root, bg=BORDER, height=1).pack(fill="x", padx=20, pady=(4, 8))
+        # Main content: grid with row weights — notebook 40%, log 60%
+        main = tk.Frame(self.root, bg=BG_MAIN)
+        main.pack(fill="both", expand=True)
+        main.rowconfigure(0, weight=0)   # notebook — altura natural
+        main.rowconfigure(1, weight=3)   # log — ocupar más espacio relativo
+        main.columnconfigure(0, weight=1)
 
-        # Notebook — only tabs are ttk; inner content uses native tk
-        nb = ttk.Notebook(self.root)
-        nb.pack(fill="both", expand=False, padx=18, pady=(0, 6))
+        nb = ttk.Notebook(main)
+        nb.grid(row=0, column=0, sticky="nsew", padx=18, pady=(4, 2))
 
         nb.add(self._build_connection_tab(nb), text="  Connection  ")
         nb.add(self._build_settings_tab(nb), text="  Settings  ")
 
-        # Log (expands to fill remaining space)
-        log_outer = self._card(self.root, "Log")
-        log_outer.pack(fill="both", expand=True, padx=18, pady=(0, 6))
+        # Log — 60% of main area
+        log_outer = self._card(main, "Log")
+        log_outer.grid(row=1, column=0, sticky="nsew", padx=18, pady=(0, 6))
+        log_outer.rowconfigure(0, weight=1)
+        log_outer.columnconfigure(0, weight=1)
 
         self.log_text = tk.Text(
             log_outer, bg=BG_LOG, fg="#7ec88a",
-            insertbackground=FG, font=("Consolas", 9),
+            insertbackground=FG, font=("Consolas", 10),
             relief="flat", borderwidth=0, highlightthickness=0,
             state="disabled", wrap="word",
         )
@@ -253,15 +277,9 @@ class MainWindow:
                            bg=BG_CARD, troughcolor=BG_MAIN,
                            activebackground=ACCENT, relief="flat", bd=0)
         self.log_text.configure(yscrollcommand=sb.set)
-        sb.pack(side="right", fill="y", padx=(0, 4), pady=6)
-        self.log_text.pack(fill="both", expand=True, padx=(8, 0), pady=6)
+        sb.grid(row=0, column=1, sticky="ns", padx=(0, 4), pady=6)
+        self.log_text.grid(row=0, column=0, sticky="nsew", padx=(8, 0), pady=6)
 
-        # Status bar
-        self.status_label = tk.Label(
-            self.root, anchor="w",
-            bg=BG_LOG, fg=FG_DIM, font=("Segoe UI", 9),
-        )
-        self.status_label.pack(fill="x", side="bottom", ipady=4, padx=0)
         self._update_status_bar()
 
     def _build_connection_tab(self, parent) -> ttk.Frame:
@@ -269,10 +287,10 @@ class MainWindow:
 
         # ── Server card ──
         srv = self._card(tab, "Server Mode  —  this PC shares keyboard & mouse")
-        srv.pack(fill="x", padx=10, pady=(12, 6))
+        srv.pack(fill="x", padx=10, pady=(4, 2))
 
         srv_inner = tk.Frame(srv, bg=BG_CARD)
-        srv_inner.pack(fill="x", padx=12, pady=10)
+        srv_inner.pack(fill="x", padx=12, pady=4)
 
         self.server_dot = tk.Label(srv_inner, text="\u2b24",
                                     bg=BG_CARD, fg="#444", font=("Segoe UI", 16))
@@ -296,35 +314,35 @@ class MainWindow:
         self.start_server_btn.pack(side="right")
 
         # ── Client card ──
-        cli = self._card(tab, "Client Mode  —  this PC receives input")
-        cli.pack(fill="x", padx=10, pady=(0, 10))
+        cli = self._card(tab, "Client Mode  —  Esta PC recibe entrada")
+        cli.pack(fill="x", padx=10, pady=(0, 4))
 
         row0 = tk.Frame(cli, bg=BG_CARD)
-        row0.pack(fill="x", padx=12, pady=(10, 4))
+        row0.pack(fill="x", padx=12, pady=(4, 2))
 
         self.client_dot = tk.Label(row0, text="\u2b24",
                                     bg=BG_CARD, fg="#444", font=("Segoe UI", 16))
         self.client_dot.pack(side="left")
 
-        self.client_status_lbl = tk.Label(row0, text="Disconnected",
+        self.client_status_lbl = tk.Label(row0, text="Desconectado",
                                            bg=BG_CARD, fg=FG_DIM,
                                            font=("Segoe UI", 10))
         self.client_status_lbl.pack(side="left", padx=(8, 0))
 
         row1 = tk.Frame(cli, bg=BG_CARD)
-        row1.pack(fill="x", padx=12, pady=(0, 12))
+        row1.pack(fill="x", padx=12, pady=(0, 4))
 
-        self._label(row1, "Server IP:").pack(side="left")
+        self._label(row1, "IP del servidor:").pack(side="left")
 
         self.ip_entry = self._entry(row1, self.ip_var, width=22)
         self.ip_entry.pack(side="left", padx=(8, 10))
         self.ip_entry.bind("<Return>", lambda _: self.start_client())
 
-        self.start_client_btn = self._btn(row1, "\u25b6  Connect",
+        self.start_client_btn = self._btn(row1, "\u25b6  Conectar",
                                            self.start_client)
         self.start_client_btn.pack(side="left")
 
-        self.stop_client_btn = self._btn(row1, "\u25a0  Stop",
+        self.stop_client_btn = self._btn(row1, "\u25a0  Detener",
                                           self.stop_client, bg="#4a2020",
                                           state="disabled")
         self.stop_client_btn.pack(side="left", padx=(6, 0))
@@ -334,22 +352,22 @@ class MainWindow:
     def _build_settings_tab(self, parent) -> ttk.Frame:
         tab = ttk.Frame(parent)
 
-        cfg = self._card(tab, "Configuration")
+        cfg = self._card(tab, "Configuración")
         cfg.pack(fill="x", padx=10, pady=(12, 6))
 
         grid = tk.Frame(cfg, bg=BG_CARD)
         grid.pack(fill="x", padx=16, pady=12)
 
         fields = [
-            ("Port:",                    self._spinbox(grid, self.port_var, 1024, 65535)),
-            ("Switch edge:",             self._optionmenu(grid, self.edge_var,
-                                                          ["right", "left", "top", "bottom"])),
-            ("Switch margin (px):",      self._spinbox(grid, self.margin_var, 1, 50)),
-            ("Client pointer speed:",    self._spinbox(grid, self.speed_var, 0.10, 4.00,
+            ("Puerto:",                    self._spinbox(grid, self.port_var, 1024, 65535)),
+            ("Borde de cambio:",             self._optionmenu(grid, self.edge_var,
+                                                          ["derecha", "izquierda", "arriba", "abajo"])),
+            ("Margen de cambio (px):",      self._spinbox(grid, self.margin_var, 1, 50)),
+            ("Velocidad del puntero del cliente:",    self._spinbox(grid, self.speed_var, 0.10, 4.00,
                                                        fmt="%.2f", step=0.10)),
-            ("Heartbeat interval (sec):", self._spinbox(grid, self.heartbeat_var, 1, 60)),
-            ("Switch hotkey:",           self._entry(grid, self.hotkey_var, width=24)),
-            ("Shared secret:",           self._entry(grid, self.secret_var, width=24)),
+            ("Intervalo de latido (seg):", self._spinbox(grid, self.heartbeat_var, 1, 60)),
+            ("Tecla de cambio:",           self._entry(grid, self.hotkey_var, width=24)),
+            ("Clave compartida:",           self._entry(grid, self.secret_var, width=24)),
         ]
         for i, (lbl_text, widget) in enumerate(fields):
             self._label(grid, lbl_text).grid(
@@ -358,7 +376,7 @@ class MainWindow:
 
         # Clipboard checkbox
         self.clip_check = self._checkbutton(
-            grid, "Sync clipboard between PCs", self.clipboard_var)
+            grid, "Sincronizar portapapeles entre PCs", self.clipboard_var)
         self.clip_check.grid(row=len(fields), column=0, columnspan=2,
                               sticky="w", pady=(8, 2))
 
@@ -540,14 +558,20 @@ class MainWindow:
         if self.client_proc and not self.client_proc.is_running():
             if str(self.start_client_btn.cget("state")) == "disabled":
                 self._set_client_state(False)
-        self.root.after(1500, self._poll_processes)
+        # Poll every 2s — low enough to catch crashes promptly, fast enough to be light
+        self.root.after(2000, self._poll_processes)
 
     def _log(self, text: str):
         ts = datetime.now().strftime("%H:%M:%S")
-        self.log_text.configure(state="normal")
-        self.log_text.insert("end", f"[{ts}] {text}\n")
-        self.log_text.see("end")
-        self.log_text.configure(state="disabled")
+        widget = self.log_text
+        widget.configure(state="normal")
+        # Cap log at 500 lines to prevent unbounded memory growth
+        line_count = int(widget.index("end-1c").split(".")[0])
+        if line_count > 500:
+            widget.delete("1.0", "50.0")  # remove oldest 50 lines at once
+        widget.insert("end", f"[{ts}] {text}\n")
+        widget.see("end")
+        widget.configure(state="disabled")
 
     # ── System tray ─────────────────────────────────────────────────
 
@@ -565,11 +589,11 @@ class MainWindow:
             self.root.withdraw()
             if self.tray_icon is None:
                 menu = pystray.Menu(
-                    pystray.MenuItem("Abrir my-hards", self._tray_restore, default=True),
+                    pystray.MenuItem("Abrir myHards", self._tray_restore, default=True),
                     pystray.MenuItem("Cerrar", self._tray_quit),
                 )
-                self.tray_icon = pystray.Icon("my-hards", self._create_tray_image(),
-                                              "my-hards", menu)
+                self.tray_icon = pystray.Icon("myHards", self._create_tray_image(),
+                                              "myHards", menu)
                 threading.Thread(target=self.tray_icon.run, daemon=True).start()
 
     def _tray_restore(self, icon=None, item=None):

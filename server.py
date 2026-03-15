@@ -19,6 +19,11 @@ import threading
 import time
 import logging
 
+try:
+    import pyperclip as _pyperclip
+except ImportError:
+    _pyperclip = None
+
 from pynput import mouse, keyboard
 from pynput.mouse import Controller as MouseController
 
@@ -135,13 +140,16 @@ class Server:
         self._start_listeners()
 
     def _send(self, msg_type: MessageType, data: dict = None):
+        sock = self.client_sock
+        if not sock:
+            return
+        msg = encode_message(msg_type, data)
         with self.lock:
-            if self.client_sock:
-                try:
-                    self.client_sock.sendall(encode_message(msg_type, data))
-                except OSError:
-                    log.error("Lost connection to client")
-                    self.running = False
+            try:
+                sock.sendall(msg)
+            except OSError:
+                log.error("Lost connection to client")
+                self.running = False
 
     def _receive_loop(self):
         """Listen for messages from the client (e.g. switch-back)."""
@@ -272,13 +280,12 @@ class Server:
     # ── Clipboard ───────────────────────────────────────────────────
 
     def _handle_clipboard(self, data: dict):
-        if not self.config.get("clipboard_sync"):
+        if not self.config.get("clipboard_sync") or _pyperclip is None:
             return
         text = data.get("text", "")
         if text:
             try:
-                import pyperclip
-                pyperclip.copy(text)
+                _pyperclip.copy(text)
                 log.info("Clipboard synced from client (%d chars)", len(text))
             except Exception:
                 pass
@@ -289,25 +296,31 @@ class Server:
         """
         Dedicated thread: polls GetCursorPos at ~500 Hz while active,
         computes deltas from center, sends them, and recenters with
-        SetCursorPos.  This avoids all callback/warp timing issues.
+        SetCursorPos.
         """
         point = wintypes.POINT()
+        point_ref = ctypes.byref(point)
         cx, cy = self._cx, self._cy
+        _get = _user32.GetCursorPos
+        _set = _user32.SetCursorPos
+        _send = self._send
+        _move = MessageType.MOUSE_MOVE
+        _sleep = time.sleep
 
         while self.running:
             if not self.active:
-                time.sleep(0.05)  # idle — no need to poll fast
+                _sleep(0.05)  # idle — no need to poll fast
                 continue
 
-            _user32.GetCursorPos(ctypes.byref(point))
+            _get(point_ref)
             dx = point.x - cx
             dy = point.y - cy
 
-            if dx != 0 or dy != 0:
-                self._send(MessageType.MOUSE_MOVE, {"dx": dx, "dy": dy})
-                _user32.SetCursorPos(cx, cy)
+            if dx or dy:
+                _send(_move, {"dx": dx, "dy": dy})
+                _set(cx, cy)
 
-            time.sleep(0.002)  # ~500 Hz
+            _sleep(0.002)  # ~500 Hz
 
     # ── Input capture ───────────────────────────────────────────────
 
@@ -330,13 +343,14 @@ class Server:
         hotkey_listener.start()
         log.info("Input capture active. Hotkey: %s | Ctrl+Alt+Q to quit.", hotkey_str)
 
+        _sleep = time.sleep
         try:
             while self.running:
-                time.sleep(0.1)
+                _sleep(0.1)
         except KeyboardInterrupt:
             pass
         finally:
-            self._show_cursor()  # Ensure cursor is visible on exit
+            self._show_cursor()
             mouse_listener.stop()
             key_listener.stop()
             hotkey_listener.stop()

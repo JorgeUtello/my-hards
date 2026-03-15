@@ -11,6 +11,11 @@ import threading
 import time
 import logging
 
+try:
+    import pyperclip as _pyperclip
+except ImportError:
+    _pyperclip = None
+
 from pynput.mouse import Button, Controller as MouseController
 from pynput.keyboard import Key, Controller as KeyController, KeyCode
 
@@ -101,13 +106,16 @@ class Client:
         return result is not None and result.get("type") == MessageType.AUTH_OK
 
     def _send(self, msg_type: MessageType, data: dict = None):
+        sock = self.sock
+        if not sock:
+            return
+        msg = encode_message(msg_type, data)
         with self.lock:
-            if self.sock:
-                try:
-                    self.sock.sendall(encode_message(msg_type, data))
-                except OSError:
-                    log.error("Lost connection to server")
-                    self.running = False
+            try:
+                sock.sendall(msg)
+            except OSError:
+                log.error("Lost connection to server")
+                self.running = False
 
     def _receive_loop(self):
         """Main loop: receive and handle messages from server."""
@@ -251,13 +259,12 @@ class Client:
     # ── Clipboard ───────────────────────────────────────────────────
 
     def _handle_clipboard(self, data: dict):
-        if not self.config.get("clipboard_sync"):
+        if not self.config.get("clipboard_sync") or _pyperclip is None:
             return
         text = data.get("text", "")
         if text:
             try:
-                import pyperclip
-                pyperclip.copy(text)
+                _pyperclip.copy(text)
                 log.info("Clipboard synced from server (%d chars)", len(text))
             except Exception:
                 pass

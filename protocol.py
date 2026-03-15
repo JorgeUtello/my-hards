@@ -12,6 +12,10 @@ import ssl
 import struct
 from enum import Enum
 
+# Pre-compiled struct for speed
+_PACK4 = struct.Struct("!I")
+_UNPACK4 = struct.Struct("!I")  # same format, kept separate for clarity
+
 
 class MessageType(str, Enum):
     MOUSE_MOVE = "mouse_move"
@@ -31,8 +35,8 @@ class MessageType(str, Enum):
     AUTH_FAIL = "auth_fail"
 
 
-# Valid message types for fast validation
-_VALID_TYPES = {t.value for t in MessageType}
+# Valid message types for fast validation (frozenset is slightly faster for 'in')
+_VALID_TYPES = frozenset(t.value for t in MessageType)
 
 # Maximum message size (64 KB — input events are tiny)
 MAX_MESSAGE_SIZE = 65_536
@@ -43,8 +47,8 @@ def encode_message(msg_type: MessageType, data: dict = None) -> bytes:
     payload = {"type": msg_type.value}
     if data:
         payload["data"] = data
-    json_bytes = json.dumps(payload).encode("utf-8")
-    return struct.pack("!I", len(json_bytes)) + json_bytes
+    json_bytes = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    return _PACK4.pack(len(json_bytes)) + json_bytes
 
 
 def recv_message(sock: socket.socket) -> dict | None:
@@ -52,15 +56,15 @@ def recv_message(sock: socket.socket) -> dict | None:
     raw_len = _recv_exact(sock, 4)
     if raw_len is None:
         return None
-    msg_len = struct.unpack("!I", raw_len)[0]
+    msg_len = _UNPACK4.unpack(raw_len)[0]
     if msg_len > MAX_MESSAGE_SIZE:
         return None
     raw_data = _recv_exact(sock, msg_len)
     if raw_data is None:
         return None
     try:
-        msg = json.loads(raw_data.decode("utf-8"))
-    except (json.JSONDecodeError, UnicodeDecodeError):
+        msg = json.loads(raw_data)
+    except (json.JSONDecodeError, ValueError):
         return None
     if not isinstance(msg, dict) or msg.get("type") not in _VALID_TYPES:
         return None
@@ -68,16 +72,18 @@ def recv_message(sock: socket.socket) -> dict | None:
 
 
 def _recv_exact(sock: socket.socket, n: int) -> bytes | None:
-    """Receive exactly n bytes from a socket."""
-    buf = bytearray()
-    while len(buf) < n:
-        try:
-            chunk = sock.recv(n - len(buf))
-        except (ConnectionResetError, ConnectionAbortedError, OSError):
-            return None
-        if not chunk:
-            return None
-        buf.extend(chunk)
+    """Receive exactly n bytes from a socket using a pre-allocated buffer."""
+    buf = bytearray(n)
+    view = memoryview(buf)
+    pos = 0
+    try:
+        while pos < n:
+            received = sock.recv_into(view[pos:], n - pos)
+            if not received:
+                return None
+            pos += received
+    except (ConnectionResetError, ConnectionAbortedError, OSError):
+        return None
     return bytes(buf)
 
 
