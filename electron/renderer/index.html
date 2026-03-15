@@ -57,8 +57,9 @@
             <button id="btn-start-server" class="btn btn-primary">Iniciar servidor</button>
             <button id="btn-stop-server"  class="btn btn-danger"  disabled>Detener servidor</button>
           </div>
-          <div class="hint" id="server-hint">
-            IP local: <strong id="local-ip">…</strong>
+          <!-- Large IP display (top-right under action buttons). Only the IP is shown. -->
+          <div id="server-hint" style="display:flex; justify-content:flex-end; margin-top:8px;">
+            <div id="local-ip-large" style="color:#ffffff; font-size:20px; font-weight:700;">…</div>
           </div>
         </div>
       </div>

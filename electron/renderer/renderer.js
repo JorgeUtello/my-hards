@@ -20,7 +20,7 @@ const serverDot    = $('server-dot');
 const serverStatus = $('server-status');
 const clientDot    = $('client-dot');
 const clientStatus = $('client-status');
-const localIpEl    = $('local-ip');
+const localIpEl    = $('local-ip-large');
 const statusText   = $('status-text');
 const logContent   = $('log-content');
 const logScroll    = $('log-scroll');
@@ -80,7 +80,7 @@ function nthNewline(str, n) {
 
 // ── Status bar ────────────────────────────────────────────────────────────────
 function updateStatusBar() {
-  const parts = [`IP local: ${config._localIp || '…'}`];
+  const parts = [];
   if (serverRunning) parts.push('Servidor: ON');
   if (clientRunning) parts.push('Cliente: ON');
   if (!serverRunning && !clientRunning) parts.push('Listo');
@@ -255,7 +255,7 @@ window.api.onMenuTab((tab) => activateTab(tab));
   ]);
   config._localIp = ip;
   config = { ...cfg, _localIp: ip };
-  localIpEl.textContent = ip;
+  if (localIpEl) localIpEl.textContent = ip;
   applyConfigToUi(cfg);
   updateStatusBar();
   log('my-hards listo.');

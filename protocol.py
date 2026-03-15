@@ -15,6 +15,17 @@ from enum import Enum
 # Pre-compiled struct for 4-byte big-endian unsigned int (length prefix)
 _STRUCT4 = struct.Struct("!I")
 
+# Fast binary frame for MOUSE_MOVE (hot path — avoids JSON alloc at 125 Hz)
+# Frame layout: [4-byte length=5][0xFF marker][dx: i16 BE][dy: i16 BE] = 9 bytes total
+_MOVE_STRUCT      = struct.Struct("!hh")                        # 2 × signed short
+_MOVE_PAYLOAD_LEN = 5                                           # marker(1) + data(4)
+_FAST_MOVE_PREFIX = _STRUCT4.pack(_MOVE_PAYLOAD_LEN) + b'\xff'  # pre-computed 5 bytes
+
+
+def encode_mouse_move(dx: int, dy: int) -> bytes:
+    """Encode MOUSE_MOVE as a compact 9-byte binary frame (vs ~45-byte JSON)."""
+    return _FAST_MOVE_PREFIX + _MOVE_STRUCT.pack(dx, dy)
+
 
 class MessageType(str, Enum):
     MOUSE_MOVE = "mouse_move"
@@ -61,6 +72,10 @@ def recv_message(sock: socket.socket) -> dict | None:
     raw_data = _recv_exact(sock, msg_len)
     if raw_data is None:
         return None
+    # Fast path: binary MOUSE_MOVE (9-byte frame, marker byte 0xFF)
+    if msg_len == _MOVE_PAYLOAD_LEN and raw_data[0] == 0xFF:
+        dx, dy = _MOVE_STRUCT.unpack(raw_data[1:])
+        return {"type": "mouse_move", "data": {"dx": dx, "dy": dy}}
     try:
         msg = json.loads(raw_data)
     except (json.JSONDecodeError, ValueError):

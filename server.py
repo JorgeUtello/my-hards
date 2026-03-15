@@ -25,7 +25,7 @@ except ImportError:
 
 from pynput import mouse, keyboard
 
-from protocol import (MessageType, encode_message, recv_message,
+from protocol import (MessageType, encode_message, encode_mouse_move, recv_message,
                       ensure_certs, create_tls_context_server)
 from config import load_config, CERT_FILE, KEY_FILE
 from input_utils import get_screen_size, is_at_edge
@@ -39,6 +39,13 @@ log = logging.getLogger("server")
 
 # Win32 helpers
 _user32 = ctypes.windll.user32
+
+# Raise Windows timer resolution to 1 ms so time.sleep is accurate in the relay loop
+try:
+    _winmm = ctypes.WinDLL("winmm")
+    _winmm.timeBeginPeriod(1)
+except Exception:
+    _winmm = None
 
 
 class Server:
@@ -146,6 +153,18 @@ class Server:
                 sock.sendall(msg)
             except OSError:
                 log.error("Lost connection to client")
+                self.running = False
+
+    def _send_move(self, dx: int, dy: int):
+        """Send a MOUSE_MOVE as a compact 9-byte binary frame (hot path)."""
+        sock = self.client_sock
+        if not sock:
+            return
+        msg = encode_mouse_move(dx, dy)
+        with self.lock:
+            try:
+                sock.sendall(msg)
+            except OSError:
                 self.running = False
 
     def _receive_loop(self):
@@ -291,17 +310,16 @@ class Server:
 
     def _relay_loop(self):
         """
-        Dedicated thread: polls GetCursorPos at ~500 Hz while active,
-        computes deltas from center, sends them, and recenters with
-        SetCursorPos.
+        Dedicated thread: polls GetCursorPos at ~125 Hz while active,
+        computes deltas from center, sends them as compact binary frames,
+        and recenters with SetCursorPos.
         """
         point = wintypes.POINT()
         point_ref = ctypes.byref(point)
         cx, cy = self._cx, self._cy
         _get = _user32.GetCursorPos
         _set = _user32.SetCursorPos
-        _send = self._send
-        _move = MessageType.MOUSE_MOVE
+        _send_move = self._send_move
         _sleep = time.sleep
 
         while self.running:
@@ -314,10 +332,10 @@ class Server:
             dy = point.y - cy
 
             if dx or dy:
-                _send(_move, {"dx": dx, "dy": dy})
+                _send_move(dx, dy)
                 _set(cx, cy)
 
-            _sleep(0.002)  # ~500 Hz
+            _sleep(0.008)  # ~125 Hz
 
     # ── Input capture ───────────────────────────────────────────────
 
@@ -416,6 +434,11 @@ class Server:
             try:
                 self.client_sock.close()
             except OSError:
+                pass
+        if _winmm:
+            try:
+                _winmm.timeEndPeriod(1)
+            except Exception:
                 pass
         log.info("Server stopped.")
 
