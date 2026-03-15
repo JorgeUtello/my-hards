@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self';" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>my-hards</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- ── Custom titlebar ──────────────────────────────────── -->
+  <div id="titlebar">
+    <!-- Left: icon + app name (draggable) -->
+    <div id="titlebar-drag">
+      <!-- SVG icon: two overlapping squares in accent colour -->
+      <svg id="titlebar-icon" width="16" height="16" viewBox="0 0 16 16" fill="none"
+           xmlns="http://www.w3.org/2000/svg">
+        <rect x="1" y="4" width="9" height="9" rx="1.5" fill="#e94560"/>
+        <rect x="6" y="1" width="9" height="9" rx="1.5" fill="#0f3460" stroke="#e94560" stroke-width="1"/>
+      </svg>
+      <span id="titlebar-title">my-hards</span>
+    </div>
+
+    <!-- Right: window controls (no-drag) -->
+    <div id="titlebar-controls">
+      <button id="btn-win-minimize"  class="win-btn" title="Minimizar">&#x2212;</button>
+      <button id="btn-win-maximize"  class="win-btn" title="Maximizar">&#x25A1;</button>
+      <button id="btn-win-close"     class="win-btn win-btn-close" title="Cerrar">&#x2715;</button>
+    </div>
+  </div>
+  <!-- ── Status bar ───────────────────────────────────────────────── -->
+  <div id="status-bar">
+    <span id="status-text">Cargando…</span>
+  </div>
+
+  <!-- ── Main layout ──────────────────────────────────────────────── -->
+  <div id="app">
+
+    <!-- Tabs -->
+    <div id="tabs">
+      <button class="tab-btn active" data-tab="connection">Conexión</button>
+      <button class="tab-btn"        data-tab="settings">Ajustes</button>
+    </div>
+
+    <!-- ── Connection tab ───────────────────────────────────────────── -->
+    <div id="tab-connection" class="tab-panel active">
+
+      <!-- Server card -->
+      <div class="card">
+        <div class="card-title">Modo Servidor — este PC comparte teclado y ratón</div>
+        <div class="card-body">
+          <div class="status-row">
+            <span id="server-dot" class="dot"></span>
+            <span id="server-status">Detenido</span>
+            <div class="spacer"></div>
+            <button id="btn-start-server" class="btn btn-primary">Iniciar servidor</button>
+            <button id="btn-stop-server"  class="btn btn-danger"  disabled>Detener servidor</button>
+          </div>
+          <div class="hint" id="server-hint">
+            IP local: <strong id="local-ip">…</strong>
+          </div>
+        </div>
+      </div>
+
+      <!-- Client card -->
+      <div class="card" style="margin-top: 10px;">
+        <div class="card-title">Modo Cliente — este PC recibe el teclado y ratón</div>
+        <div class="card-body">
+          <div class="status-row">
+            <span id="client-dot" class="dot"></span>
+            <span id="client-status">Desconectado</span>
+          </div>
+          <div class="field-row" style="margin-top: 10px;">
+            <label for="input-ip">IP del servidor:</label>
+            <input id="input-ip" type="text" placeholder="192.168.x.x" spellcheck="false" />
+            <button id="btn-start-client" class="btn btn-primary">Conectar</button>
+            <button id="btn-stop-client"  class="btn btn-danger"  disabled>Desconectar</button>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /tab-connection -->
+
+    <!-- ── Settings tab ─────────────────────────────────────────────── -->
+    <div id="tab-settings" class="tab-panel">
+      <div class="card">
+        <div class="card-title">Configuración</div>
+        <div class="card-body">
+          <div class="settings-grid">
+
+            <label>Puerto:</label>
+            <input id="cfg-port" type="number" min="1024" max="65535" />
+            <span class="hint-inline"></span>
+
+            <label>Borde de cambio:</label>
+            <select id="cfg-edge">
+              <option value="right">Derecha</option>
+              <option value="left">Izquierda</option>
+              <option value="top">Arriba</option>
+              <option value="bottom">Abajo</option>
+            </select>
+            <span class="hint-inline"></span>
+
+            <label>Margen de cambio (px):</label>
+            <input id="cfg-margin" type="number" min="1" max="50" />
+            <span class="hint-inline"></span>
+
+            <label>Velocidad del puntero:</label>
+            <input id="cfg-speed" type="number" min="0.1" max="4.0" step="0.1" />
+            <span class="hint-inline"></span>
+
+            <label>Intervalo de latido (seg):</label>
+            <input id="cfg-heartbeat" type="number" min="1" max="60" />
+            <span class="hint-inline"></span>
+
+            <label>Tecla de cambio:</label>
+            <input id="cfg-hotkey" type="text" spellcheck="false" />
+            <span class="hint-inline muted">Ej: &lt;ctrl&gt;+&lt;alt&gt;+s</span>
+
+            <label>Clave compartida:</label>
+            <input id="cfg-secret" type="password" spellcheck="false" />
+            <span class="hint-inline muted">Debe coincidir en ambas PCs</span>
+
+          </div>
+
+          <label class="checkbox-row">
+            <input id="cfg-clipboard" type="checkbox" />
+            Sincronizar portapapeles entre PCs
+          </label>
+
+          <div class="btn-row" style="margin-top: 14px;">
+            <button id="btn-save-config"  class="btn btn-primary">Guardar config.json</button>
+            <button id="btn-reset-config" class="btn btn-secondary">Restablecer valores</button>
+          </div>
+        </div>
+      </div>
+    </div><!-- /tab-settings -->
+
+    <!-- ── Log ──────────────────────────────────────────────────────── -->
+    <div id="log-wrapper">
+      <div class="card-title log-title">Log</div>
+      <div id="log-scroll">
+        <pre id="log-content"></pre>
+      </div>
+    </div>
+
+  </div><!-- /app -->
+
+  <script src="renderer.js"></script>
+</body>
+</html>
