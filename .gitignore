@@ -5,3 +5,6 @@ config.json
 cert.pem
 key.pem
 .env
+electron/node_modules/
+electron/package-lock.json
+bash.exe.stackdump
