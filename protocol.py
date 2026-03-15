@@ -12,9 +12,8 @@ import ssl
 import struct
 from enum import Enum
 
-# Pre-compiled struct for speed
-_PACK4 = struct.Struct("!I")
-_UNPACK4 = struct.Struct("!I")  # same format, kept separate for clarity
+# Pre-compiled struct for 4-byte big-endian unsigned int (length prefix)
+_STRUCT4 = struct.Struct("!I")
 
 
 class MessageType(str, Enum):
@@ -48,7 +47,7 @@ def encode_message(msg_type: MessageType, data: dict = None) -> bytes:
     if data:
         payload["data"] = data
     json_bytes = json.dumps(payload, separators=(",", ":")).encode("utf-8")
-    return _PACK4.pack(len(json_bytes)) + json_bytes
+    return _STRUCT4.pack(len(json_bytes)) + json_bytes
 
 
 def recv_message(sock: socket.socket) -> dict | None:
@@ -56,7 +55,7 @@ def recv_message(sock: socket.socket) -> dict | None:
     raw_len = _recv_exact(sock, 4)
     if raw_len is None:
         return None
-    msg_len = _UNPACK4.unpack(raw_len)[0]
+    msg_len = _STRUCT4.unpack(raw_len)[0]
     if msg_len > MAX_MESSAGE_SIZE:
         return None
     raw_data = _recv_exact(sock, msg_len)

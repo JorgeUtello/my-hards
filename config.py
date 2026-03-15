@@ -28,17 +28,30 @@ DEFAULT_CONFIG = {
 _config_cache: dict | None = None
 
 
+def _normalize_config(raw_config: dict | None) -> tuple[dict, bool]:
+    """Merge user config with defaults and report whether it changed."""
+    config = DEFAULT_CONFIG.copy()
+    if isinstance(raw_config, dict):
+        config.update(raw_config)
+    if not config.get("shared_secret"):
+        config["shared_secret"] = secrets.token_urlsafe(24)
+    return config, config != raw_config
+
+
 def load_config() -> dict:
     """Load config from file, falling back to defaults. Cached after first load."""
     global _config_cache
     if _config_cache is not None:
         return _config_cache
-    config = DEFAULT_CONFIG.copy()
+    raw_config = None
     if os.path.exists(CONFIG_FILE):
-        with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-            config.update(json.load(f))
-    if not config.get("shared_secret"):
-        config["shared_secret"] = secrets.token_urlsafe(24)
+        try:
+            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+                raw_config = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            raw_config = None
+    config, changed = _normalize_config(raw_config)
+    if changed:
         save_config(config)
     _config_cache = config
     return config

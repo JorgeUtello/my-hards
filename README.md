@@ -1,6 +1,6 @@
 # my-hards 🖱️⌨️
 
-Comparte teclado y mouse entre 2 PCs en la misma red local — como Synergy, pero simple y open source.
+Comparte teclado y mouse entre 2 PCs en la misma red local, con backend en Python y escritorio en Electron.
 
 ## Cómo funciona
 
@@ -20,6 +20,7 @@ Comparte teclado y mouse entre 2 PCs en la misma red local — como Synergy, per
 ## Requisitos
 
 - Python 3.10+
+- Node.js 18+
 - Ambos PCs en la misma red local
 - Windows o Linux
 
@@ -27,33 +28,36 @@ Comparte teclado y mouse entre 2 PCs en la misma red local — como Synergy, per
 
 ```bash
 cd my-hards
+python -m venv .venv
+.venv\Scripts\activate
 pip install -r requirements.txt
+cd electron
+npm install
 ```
 
 ## Uso rápido
 
-### 1. En el PC principal (Server)
+### Interfaz principal
+
+```bash
+cd electron
+npm start
+```
+
+La app Electron inicia y controla `server.py` y `client.py` usando el Python del entorno local `.venv` cuando existe.
+
+### Lanzador Python
 
 ```bash
 python main.py
-# Seleccionar opción 1 (Server)
 ```
 
-### 2. En el PC remoto (Client)
+`main.py` actua como lanzador fino y exige que Electron haya sido instalado en `electron/node_modules`.
+
+### Backend directo
 
 ```bash
-python main.py
-# Seleccionar opción 2 (Client)
-# Ingresar la IP del server (ej: 192.168.1.100)
-```
-
-### O directamente:
-
-```bash
-# Server
 python server.py
-
-# Client
 python client.py 192.168.1.100
 ```
 
@@ -116,12 +120,12 @@ sudo ufw allow 24800/tcp
 
 ```
 my-hards/
-├── main.py          # Launcher interactivo
-├── server.py        # Servidor (PC principal)
-├── client.py        # Cliente (PC remoto)
-├── protocol.py      # Protocolo de mensajes
-├── config.py        # Configuración
-├── input_utils.py   # Utilidades de input
-├── requirements.txt # Dependencias
+├── main.py                # Lanzador de la app Electron
+├── server.py              # Servidor (PC principal)
+├── client.py              # Cliente (PC remoto)
+├── protocol.py            # Protocolo de mensajes
+├── config.py              # Configuración compartida
+├── electron/              # UI principal en Electron
+├── requirements.txt       # Dependencias Python
 └── README.md
 ```

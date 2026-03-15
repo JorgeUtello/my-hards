@@ -14,7 +14,6 @@ import hashlib
 import hmac
 import os
 import socket
-import sys
 import threading
 import time
 import logging
@@ -25,12 +24,11 @@ except ImportError:
     _pyperclip = None
 
 from pynput import mouse, keyboard
-from pynput.mouse import Controller as MouseController
 
 from protocol import (MessageType, encode_message, recv_message,
                       ensure_certs, create_tls_context_server)
 from config import load_config, CERT_FILE, KEY_FILE
-from input_utils import get_screen_size, is_at_edge, lock_cursor_to_edge, opposite_edge
+from input_utils import get_screen_size, is_at_edge
 
 logging.basicConfig(
     level=logging.INFO,
@@ -55,7 +53,6 @@ class Server:
         self.active = False          # True when input is being sent to client
         self.running = True
         self.lock = threading.Lock()
-        self.mouse_ctrl = MouseController()
 
         # Center anchor for relay mode
         self._cx = self.screen_w // 2
@@ -358,7 +355,7 @@ class Server:
 
     def _on_hotkey(self):
         """Called when the manual switch hotkey is pressed."""
-        self._suppress_until = time.time() + 0.35  # suppress next 350 ms of key events
+        self._suppress_until = time.monotonic() + 0.35  # suppress next 350 ms of key events
         if self.active:
             log.info("Hotkey → switching back to SERVER")
             self._switch_to_server()
@@ -397,7 +394,7 @@ class Server:
             return False
 
         # Suppress hotkey combo keys so they're not forwarded to client
-        if time.time() < self._suppress_until:
+        if time.monotonic() < self._suppress_until:
             return
 
         if not self.active:
@@ -406,7 +403,7 @@ class Server:
 
     def _on_key_release(self, key):
         # Suppress hotkey combo keys
-        if time.time() < self._suppress_until:
+        if time.monotonic() < self._suppress_until:
             return
 
         if not self.active:

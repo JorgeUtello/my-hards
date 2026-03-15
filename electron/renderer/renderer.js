@@ -11,7 +11,8 @@ let serverRunning = false;
 let clientRunning = false;
 let config        = {};
 const MAX_LOG_LINES = 500;
-let logLines        = 0;let logText         = '';   // shadow buffer — avoids reading back from DOM
+let logLines        = 0;
+let logText         = '';   // shadow buffer — avoids reading back from DOM
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 const $ = (id) => document.getElementById(id);
 
@@ -149,6 +150,11 @@ function activateTab(name) {
 
 tabBtns.forEach(btn => btn.addEventListener('click', () => activateTab(btn.dataset.tab)));
 
+// Enter on IP field triggers connect
+inputIp.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') btnStartClient.click();
+});
+
 // ── Button handlers ───────────────────────────────────────────────────────────
 btnStartServer.addEventListener('click', async () => {
   const cfg = configFromUi();
@@ -186,15 +192,18 @@ btnSaveConfig.addEventListener('click', async () => {
 });
 
 btnResetConfig.addEventListener('click', async () => {
-  // Reload defaults from main process (it knows the DEFAULT_CONFIG)
   const defaults = {
     port: 24800, switch_edge: 'right', switch_margin: 2,
+    client_screen_width: 1920, client_screen_height: 1080,
     client_pointer_speed: 1.0, clipboard_sync: true,
     heartbeat_interval: 5, switch_hotkey: '<ctrl>+<alt>+s',
     shared_secret: '', last_server_ip: '',
   };
   await window.api.saveConfig(defaults);
-  applyConfigToUi(defaults);
+  // Re-read from main process so the UI reflects what was actually persisted
+  // (main process fills shared_secret with a new token if empty)
+  const saved = await window.api.getConfig();
+  applyConfigToUi(saved);
   log('Configuración restablecida a valores por defecto');
 });
 

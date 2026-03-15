@@ -4,7 +4,6 @@ Input utilities: capture and replay keyboard/mouse events cross-platform.
 
 import ctypes
 import sys
-import threading
 
 
 def get_screen_size() -> tuple[int, int]:
@@ -28,20 +27,6 @@ def get_screen_size() -> tuple[int, int]:
         except Exception:
             pass
         return 1920, 1080
-
-
-def lock_cursor_to_edge(edge: str, screen_w: int, screen_h: int):
-    """Move the cursor to the edge of the screen (used when switching to client)."""
-    from pynput.mouse import Controller
-    mouse = Controller()
-    if edge == "right":
-        mouse.position = (screen_w - 1, screen_h // 2)
-    elif edge == "left":
-        mouse.position = (0, screen_h // 2)
-    elif edge == "top":
-        mouse.position = (screen_w // 2, 0)
-    elif edge == "bottom":
-        mouse.position = (screen_w // 2, screen_h - 1)
 
 
 def is_at_edge(x: int, y: int, edge: str, screen_w: int, screen_h: int, margin: int = 2) -> bool:

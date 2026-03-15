@@ -38,7 +38,6 @@ let serverProc = null;
 let clientProc = null;
 
 // ── Cached constants (computed once at startup) ───────────────────────────────
-const PYTHON_EXE = process.platform === 'win32' ? 'py' : 'python3';
 let   _localIp   = null;   // cached after first call
 let   _config    = null;   // in-memory config cache
 let   _trayIcon  = null;   // cached nativeImage
@@ -48,6 +47,19 @@ function getLocalIp() {
   if (_localIp) return _localIp;
   try {
     const interfaces = os.networkInterfaces();
+    // Priority: prefer physical Wi-Fi / Ethernet over virtual and link-local.
+    // Pass 1 — any routable (non-link-local) non-internal IPv4
+    for (const name of Object.keys(interfaces)) {
+      const isVirtual = /vethernet|hyper.?v|loopback|vmware|virtualbox|wsl|docker|vEthernet/i.test(name);
+      if (isVirtual) continue;
+      for (const iface of interfaces[name]) {
+        if (iface.family === 'IPv4' && !iface.internal && !iface.address.startsWith('169.254.')) {
+          _localIp = iface.address;
+          return _localIp;
+        }
+      }
+    }
+    // Pass 2 — fallback: any non-internal IPv4 including link-local
     for (const name of Object.keys(interfaces)) {
       for (const iface of interfaces[name]) {
         if (iface.family === 'IPv4' && !iface.internal) {
@@ -78,8 +90,40 @@ function saveConfig(config) {
   _config = merged;   // keep cache in sync
 }
 
-/** Resolve the Python executable (supports py launcher on Windows). */
-function pythonExe() { return PYTHON_EXE; }
+function resolvePythonCommand() {
+  if (process.platform === 'win32') {
+    const venvPython = path.join(ROOT, '.venv', 'Scripts', 'python.exe');
+    if (fs.existsSync(venvPython)) return { command: venvPython, args: ['-u'] };
+    return { command: 'py', args: ['-3', '-u'] };
+  }
+
+  const venvPython = path.join(ROOT, '.venv', 'bin', 'python');
+  if (fs.existsSync(venvPython)) return { command: venvPython, args: ['-u'] };
+  return { command: 'python3', args: ['-u'] };
+}
+
+function spawnPythonProcess(scriptName, extraArgs, prefix, stoppedEvent) {
+  const python = resolvePythonCommand();
+  const scriptPath = path.join(ROOT, scriptName);
+  const proc = spawn(python.command, [...python.args, scriptPath, ...extraArgs], {
+    cwd: ROOT,
+    env: process.env,
+    windowsHide: true,
+  });
+
+  attachOutput(proc, prefix);
+  proc.once('error', (error) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('log', `[${prefix}] ERROR: ${error.message}`);
+    }
+  });
+  proc.once('exit', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send(stoppedEvent);
+    }
+  });
+  return proc;
+}
 
 /** Kill a child process gracefully, then forcefully after 1.5 s. */
 function killProc(proc) {
@@ -109,6 +153,13 @@ function attachOutput(proc, prefix) {
   }
   proc.stdout.on('data', flush);
   proc.stderr.on('data', flush);
+  proc.once('close', () => {
+    const trimmed = buf.trimEnd();
+    if (trimmed && mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('log', `[${prefix}] ${trimmed}`);
+    }
+    buf = '';
+  });
 }
 
 // ── Window ────────────────────────────────────────────────────────────────────
@@ -227,16 +278,9 @@ ipcMain.handle('save-config',  (_, cfg)   => { saveConfig(cfg); return true; });
 ipcMain.handle('start-server', (_, cfg) => {
   if (serverProc && serverProc.exitCode === null) return false;
   saveConfig(cfg);
-  serverProc = spawn(pythonExe(), [path.join(ROOT, 'server.py')], {
-    cwd: ROOT,
-    env: process.env,
-    windowsHide: true,
-  });
-  attachOutput(serverProc, 'SERVER');
-  serverProc.on('exit', () => {
+  serverProc = spawnPythonProcess('server.py', [], 'SERVER', 'server-stopped');
+  serverProc.once('exit', () => {
     serverProc = null;
-    if (mainWindow && !mainWindow.isDestroyed())
-      mainWindow.webContents.send('server-stopped');
   });
   return true;
 });
@@ -249,16 +293,9 @@ ipcMain.handle('stop-server', () => {
 ipcMain.handle('start-client', (_, cfg) => {
   if (clientProc && clientProc.exitCode === null) return false;
   saveConfig(cfg);
-  clientProc = spawn(pythonExe(), [path.join(ROOT, 'client.py'), cfg.last_server_ip], {
-    cwd: ROOT,
-    env: process.env,
-    windowsHide: true,
-  });
-  attachOutput(clientProc, 'CLIENT');
-  clientProc.on('exit', () => {
+  clientProc = spawnPythonProcess('client.py', [cfg.last_server_ip], 'CLIENT', 'client-stopped');
+  clientProc.once('exit', () => {
     clientProc = null;
-    if (mainWindow && !mainWindow.isDestroyed())
-      mainWindow.webContents.send('client-stopped');
   });
   return true;
 });
