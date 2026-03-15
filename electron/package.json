@@ -1,7 +1,7 @@
 {
-  "name": "my-hards-electron",
+  "name": "myHards-electron",
   "version": "0.1.0",
-  "description": "my-hards — Keyboard & Mouse sharing between PCs",
+  "description": "myHards — Keyboard & Mouse sharing between PCs",
   "main": "main.js",
   "scripts": {
     "start": "electron ."

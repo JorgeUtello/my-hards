@@ -109,6 +109,19 @@ html, body {
   gap: 0;
 }
 
+/* Large IP displayed top-right — exact styling to match design image */
+#local-ip-large {
+  position: fixed;
+  top: 6px;            /* below the native titlebar edge */
+  right: 18px;         /* align with right window padding */
+  color: #ffffff;      /* pure white */
+  font-size: 22px;     /* large, bold */
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  z-index: 9999;
+  text-shadow: 0 1px 0 rgba(0,0,0,0.6);
+}
+
 /* ── Tabs ───────────────────────────────────────────────────────────────────── */
 #tabs {
   display: flex;

@@ -1,5 +1,5 @@
 /**
- * my-hards — Electron main process
+ * myHards — Electron main process
  * Spawns Python server.py / client.py as child processes,
  * streams their stdout to the renderer via IPC, and manages the tray icon.
  */
@@ -170,7 +170,7 @@ function createWindow() {
     minWidth: 720,
     minHeight: 600,
     backgroundColor: '#1a1a2e',
-    title: 'my-hards',
+    title: 'myHards',
     icon: buildTrayIcon(),   // reuse the generated icon for taskbar/alt-tab
     frame: false,          // remove native titlebar completely
     show: false,           // shown after ready-to-show to avoid flicker
@@ -250,10 +250,10 @@ function createTray() {
   const icon = buildTrayIcon();
 
   tray = new Tray(icon);
-  tray.setToolTip('my-hards');
+  tray.setToolTip('myHards');
   tray.setContextMenu(Menu.buildFromTemplate([
     {
-      label: 'Abrir my-hards',
+      label: 'Abrir myHards',
       click: () => { mainWindow.show(); mainWindow.focus(); },
     },
     { type: 'separator' },
@@ -365,12 +365,12 @@ function buildAppMenu() {
       label: 'Ayuda',
       submenu: [
         {
-          label: 'Acerca de my-hards',
+          label: 'Acerca de myHards',
           click: () => {
             dialog.showMessageBox(mainWindow, {
               type: 'info',
-              title: 'my-hards',
-              message: 'my-hards',
+              title: 'myHards',
+              message: 'myHards',
               detail: 'Compartición de teclado y ratón entre PCs.\nVersión 0.1.0',
               buttons: ['Cerrar'],
             });

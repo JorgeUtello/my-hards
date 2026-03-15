@@ -1,5 +1,5 @@
 """
-Configuration for my-hards.
+Configuration for myHards.
 """
 
 import json

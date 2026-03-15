@@ -1,4 +1,4 @@
-# my-hards 🖱️⌨️
+# myHards 🖱️⌨️
 
 Comparte teclado y mouse entre 2 PCs en la misma red local, con backend en Python y escritorio en Electron.
 
@@ -27,7 +27,7 @@ Comparte teclado y mouse entre 2 PCs en la misma red local, con backend en Pytho
 ## Instalación
 
 ```bash
-cd my-hards
+cd myHards
 python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
@@ -108,7 +108,7 @@ Asegurate de que el puerto 24800 (o el que configures) esté abierto en el firew
 
 **Windows:**
 ```powershell
-netsh advfirewall firewall add rule name="my-hards" dir=in action=allow protocol=TCP localport=24800
+netsh advfirewall firewall add rule name="myHards" dir=in action=allow protocol=TCP localport=24800
 ```
 
 **Linux:**
@@ -119,7 +119,7 @@ sudo ufw allow 24800/tcp
 ## Estructura del proyecto
 
 ```
-my-hards/
+myHards/
 ├── main.py                # Lanzador de la app Electron
 ├── server.py              # Servidor (PC principal)
 ├── client.py              # Cliente (PC remoto)

@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * my-hards — Renderer process
+ * myHards — Renderer process
  * All DOM interaction, state management, and calls to the Python backend
  * happen here through window.api (exposed by preload.js).
  */
@@ -258,5 +258,5 @@ window.api.onMenuTab((tab) => activateTab(tab));
   if (localIpEl) localIpEl.textContent = ip;
   applyConfigToUi(cfg);
   updateStatusBar();
-  log('my-hards listo.');
+  log('myHards listo.');
 })();

@@ -72,7 +72,7 @@ class Client:
         log.info("Connecting to %s:%d (TLS) ...", self.server_ip, self.port)
         raw_sock.connect((self.server_ip, self.port))
         raw_sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-        self.sock = tls_ctx.wrap_socket(raw_sock, server_hostname="my-hards")
+        self.sock = tls_ctx.wrap_socket(raw_sock, server_hostname="myHards")
         log.info("Connected (TLS)!")
 
         if not self._auth_handshake():

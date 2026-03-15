@@ -1,5 +1,5 @@
 """
-Protocol definitions and message types for my-hards.
+Protocol definitions and message types for myHards.
 All messages are JSON-encoded, length-prefixed (4 bytes, big-endian).
 TLS encryption and HMAC authentication protect the connection.
 """
@@ -113,7 +113,7 @@ def ensure_certs(cert_path: str, key_path: str):
     from cryptography.hazmat.primitives.asymmetric import rsa
 
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "my-hards")])
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "myHards")])
     cert = (
         x509.CertificateBuilder()
         .subject_name(name)
