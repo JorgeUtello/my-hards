@@ -171,12 +171,29 @@ function attachOutput(proc, prefix) {
 // ── Virtual camera driver (OBS VirtualCam) ─────────────────────────────────
 // CLSID of the OBS VirtualCam DirectShow filter (64-bit)
 const OBS_VIRTUALCAM_CLSID = '{A3FCE0F5-3493-419F-958A-ABA1283EFE48}';
+const OBS_DLL_NAME          = 'obs-virtualcam-module64.dll';
 
-function getDriverPath() {
-  const name = 'obs-virtualcam-module64.dll';
-  return app.isPackaged
-    ? path.join(process.resourcesPath, 'driver', name)
-    : path.join(__dirname, 'resources', 'driver', name);
+// Locations to search for the DLL, in priority order:
+// 1. Bundled inside the app (electron/resources/driver/)
+// 2. OBS Studio already installed on the system
+const OBS_DLL_SEARCH_PATHS = [
+  // Bundled
+  app.isPackaged
+    ? path.join(process.resourcesPath, 'driver', OBS_DLL_NAME)
+    : path.join(__dirname, 'resources', 'driver', OBS_DLL_NAME),
+  // OBS installed — standard locations
+  path.join('C:\\', 'Program Files', 'obs-studio', 'data', 'obs-plugins', 'win-dshow', OBS_DLL_NAME),
+  path.join('C:\\', 'Program Files (x86)', 'obs-studio', 'data', 'obs-plugins', 'win-dshow', OBS_DLL_NAME),
+  // OBS from winget / MSIX sometimes installs to LocalAppData
+  path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'obs-studio', 'data', 'obs-plugins', 'win-dshow', OBS_DLL_NAME),
+];
+
+/** Return the first path where the DLL actually exists, or null. */
+function findObsDll() {
+  for (const p of OBS_DLL_SEARCH_PATHS) {
+    if (fs.existsSync(p)) return p;
+  }
+  return null;
 }
 
 function isCameraDriverInstalled() {
@@ -191,11 +208,13 @@ function isCameraDriverInstalled() {
 
 function installCameraDriver() {
   return new Promise((resolve, reject) => {
-    const driverPath = getDriverPath();
-    if (!fs.existsSync(driverPath)) {
+    const driverPath = findObsDll();
+    if (!driverPath) {
       reject(new Error(
-        `Driver no encontrado en: ${driverPath}\n` +
-        'Descarga obs-virtualcam-module64.dll y colócalo en electron/resources/driver/',
+        'No se encontró obs-virtualcam-module64.dll.\n\n' +
+        'Opciones:\n' +
+        '1. Instala OBS Studio (obsproject.com) — el driver se detectará automáticamente.\n' +
+        '2. Copia obs-virtualcam-module64.dll a electron/resources/driver/',
       ));
       return;
     }
@@ -329,9 +348,9 @@ ipcMain.handle('save-config',  (_, cfg)   => { saveConfig(cfg); return true; });
 // ── Virtual camera driver IPC ─────────────────────────────────────────────────
 ipcMain.handle('check-camera-driver', async () => {
   if (process.platform !== 'win32') return { installed: false, supported: false };
-  const installed    = await isCameraDriverInstalled();
-  const driverExists = fs.existsSync(getDriverPath());
-  return { installed, supported: true, driverExists };
+  const installed   = await isCameraDriverInstalled();
+  const dllPath     = findObsDll();
+  return { installed, supported: true, driverExists: !!dllPath, dllPath };
 });
 
 ipcMain.handle('install-camera-driver', async () => {

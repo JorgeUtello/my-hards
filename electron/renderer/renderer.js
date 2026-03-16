@@ -324,7 +324,9 @@ window.api.onMenuTab((tab) => activateTab(tab));
   _driverInstalled = driverInfo.installed ?? false;
   if (cfg.webcam_share) updateDriverUi(true);
   if (driverInfo.supported && !driverInfo.driverExists) {
-    log('Aviso: UnityCapture64.ax no encontrado en electron/resources/driver/');
+    log('Aviso: obs-virtualcam-module64.dll no encontrado. Instala OBS Studio o cópialo manualmente.');
+  } else if (driverInfo.supported && driverInfo.dllPath && !driverInfo.installed) {
+    log(`Driver OBS encontrado en: ${driverInfo.dllPath} — haz clic en "Instalar driver" para activarlo.`);
   }
 
   log('myHards listo.');
