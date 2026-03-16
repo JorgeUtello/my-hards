@@ -319,6 +319,15 @@ input[type="text"]#input-ip { width: 170px; }
 .log-title {
   flex-shrink: 0;
   background: var(--bg-card);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.btn-copy-log {
+  padding: 2px 10px;
+  font-size: 11px;
+  margin-right: 4px;
 }
 
 #log-scroll {

@@ -66,6 +66,7 @@
               Recibir cámara web del cliente
             </label>
             <button id="btn-install-driver" class="btn btn-secondary" style="display:none;">Instalar driver</button>
+            <button id="btn-browse-dll" class="btn btn-secondary" style="display:none;">Buscar DLL…</button>
             <span id="driver-status" class="hint-inline" style="margin-left:6px;"></span>
           </div>
         </div>
@@ -151,7 +152,10 @@
 
     <!-- ── Log ──────────────────────────────────────────────────────── -->
     <div id="log-wrapper">
-      <div class="card-title log-title">Log</div>
+      <div class="card-title log-title">
+        Log
+        <button id="btn-copy-log" class="btn btn-secondary btn-copy-log" title="Copiar log al portapapeles">Copiar</button>
+      </div>
       <div id="log-scroll">
         <pre id="log-content"></pre>
       </div>

@@ -32,11 +32,13 @@ const btnStartClient = $('btn-start-client');
 const btnStopClient  = $('btn-stop-client');
 const btnSaveConfig  = $('btn-save-config');
 const btnResetConfig = $('btn-reset-config');
+const btnCopyLog     = $('btn-copy-log');
 
 // Webcam sharing controls
 const serverWebcamToggle = $('server-webcam-toggle');
 const clientWebcamToggle = $('client-webcam-toggle');
 const btnInstallDriver   = $('btn-install-driver');
+const btnBrowseDll       = $('btn-browse-dll');
 const driverStatus       = $('driver-status');
 
 // Titlebar controls
@@ -170,23 +172,29 @@ inputIp.addEventListener('keydown', (e) => {
 
 // ── Webcam sharing ─────────────────────────────────────────────────────────────────
 let _driverInstalled = false;
+let _customDllPath   = null;   // manually selected DLL path
 
 async function updateDriverUi(webcamEnabled) {
   if (!webcamEnabled) {
     btnInstallDriver.style.display = 'none';
+    btnBrowseDll.style.display = 'none';
     driverStatus.textContent = '';
     return;
   }
   if (_driverInstalled) {
     btnInstallDriver.style.display = 'none';
+    btnBrowseDll.style.display = 'none';
     driverStatus.textContent = '✓ Driver listo';
     driverStatus.style.color = 'var(--green)';
   } else {
     btnInstallDriver.style.display = '';
+    btnBrowseDll.style.display = '';
     btnInstallDriver.disabled = false;
     btnInstallDriver.textContent = 'Instalar driver';
-    driverStatus.textContent = 'Driver no instalado';
-    driverStatus.style.color = 'var(--accent)';
+    driverStatus.textContent = _customDllPath
+      ? `DLL: …${_customDllPath.slice(-32)}`
+      : 'Driver no instalado';
+    driverStatus.style.color = _customDllPath ? 'var(--fg)' : 'var(--accent)';
   }
 }
 
@@ -204,9 +212,10 @@ btnInstallDriver.addEventListener('click', async () => {
   btnInstallDriver.disabled = true;
   btnInstallDriver.textContent = 'Instalando…';
   log('Instalando driver de cámara virtual (se requiere permisos de administrador)…');
-  const result = await window.api.installCameraDriver();
+  const result = await window.api.installCameraDriver(_customDllPath);
   if (result.success) {
     _driverInstalled = true;
+    _customDllPath = null;
     log('Driver de cámara virtual instalado correctamente');
     updateDriverUi(true);
   } else {
@@ -214,6 +223,16 @@ btnInstallDriver.addEventListener('click', async () => {
     btnInstallDriver.disabled = false;
     btnInstallDriver.textContent = 'Instalar driver';
   }
+});
+
+btnBrowseDll.addEventListener('click', async () => {
+  const chosen = await window.api.browseDriverDll();
+  if (!chosen) return;
+  _customDllPath = chosen;
+  log(`DLL seleccionada manualmente: ${chosen}`);
+  updateDriverUi(true);   // stays in not-installed state but shows DLL path
+  _driverInstalled = false;
+  updateDriverUi(serverWebcamToggle.checked);
 });
 
 // ── Button handlers ───────────────────────────────────────────────────────────
@@ -245,6 +264,14 @@ btnStopClient.addEventListener('click', async () => {
   log('Desconectando cliente…');
   btnStopClient.disabled = true;
   await window.api.stopClient();
+});
+
+btnCopyLog.addEventListener('click', () => {
+  navigator.clipboard.writeText(logText).then(() => {
+    const orig = btnCopyLog.textContent;
+    btnCopyLog.textContent = '¡Copiado!';
+    setTimeout(() => { btnCopyLog.textContent = orig; }, 1500);
+  });
 });
 
 btnSaveConfig.addEventListener('click', async () => {

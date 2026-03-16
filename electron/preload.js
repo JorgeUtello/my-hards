@@ -29,8 +29,9 @@ contextBridge.exposeInMainWorld('api', {
   stopClient:  ()     => ipcRenderer.invoke('stop-client'),
 
   // Virtual camera driver
-  checkCameraDriver:   () => ipcRenderer.invoke('check-camera-driver'),
-  installCameraDriver: () => ipcRenderer.invoke('install-camera-driver'),
+  checkCameraDriver:   ()           => ipcRenderer.invoke('check-camera-driver'),
+  installCameraDriver: (customPath) => ipcRenderer.invoke('install-camera-driver', customPath),
+  browseDriverDll:     ()           => ipcRenderer.invoke('browse-driver-dll'),
 
   // Events from main → renderer
   onLog:           (cb) => { ipcRenderer.on('log',            (_, m) => cb(m)); },

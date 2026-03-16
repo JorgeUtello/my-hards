@@ -206,27 +206,32 @@ function isCameraDriverInstalled() {
   });
 }
 
-function installCameraDriver() {
+function installCameraDriver(customPath) {
   return new Promise((resolve, reject) => {
-    const driverPath = findObsDll();
+    const driverPath = customPath || findObsDll();
     if (!driverPath) {
       reject(new Error(
         'No se encontró obs-virtualcam-module64.dll.\n\n' +
         'Opciones:\n' +
         '1. Instala OBS Studio (obsproject.com) — el driver se detectará automáticamente.\n' +
-        '2. Copia obs-virtualcam-module64.dll a electron/resources/driver/',
+        '2. Copia obs-virtualcam-module64.dll a electron/resources/driver/\n' +
+        '3. Usa el botón "Buscar DLL…" para seleccionarlo manualmente.',
       ));
       return;
     }
-    // Use PowerShell + RunAs verb to trigger a UAC elevation prompt
+    // Use PowerShell + RunAs verb to trigger a UAC elevation prompt.
+    // Do NOT use -PassThru | Select-Object ExitCode — it fails with elevated processes.
+    // Instead, fire-and-wait then verify via registry.
     const escaped = driverPath.replace(/\\/g, '\\\\').replace(/'/g, "''");
-    const psCmd = `Start-Process regsvr32 -ArgumentList @('/s','${escaped}') -Verb RunAs -Wait -PassThru | Select-Object -ExpandProperty ExitCode`;
+    const psCmd = `Start-Process regsvr32 -ArgumentList @('/s','${escaped}') -Verb RunAs -Wait`;
     exec(
       `powershell -WindowStyle Hidden -Command "${psCmd}"`,
       { windowsHide: true },
-      (err, stdout) => {
+      async (err) => {
         if (err) { reject(err); return; }
-        resolve(parseInt(stdout.trim(), 10) === 0);
+        // Verify by checking if the CLSID is now in the registry
+        const registered = await isCameraDriverInstalled();
+        resolve(registered);
       },
     );
   });
@@ -353,11 +358,23 @@ ipcMain.handle('check-camera-driver', async () => {
   return { installed, supported: true, driverExists: !!dllPath, dllPath };
 });
 
-ipcMain.handle('install-camera-driver', async () => {
+ipcMain.handle('browse-driver-dll', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Seleccionar obs-virtualcam-module64.dll',
+    defaultPath: 'C:\\Program Files\\obs-studio',
+    filters: [{ name: 'DLL de OBS VirtualCam', extensions: ['dll'] }],
+    properties: ['openFile'],
+  });
+  if (result.canceled || !result.filePaths.length) return null;
+  return result.filePaths[0];
+});
+
+ipcMain.handle('install-camera-driver', async (_, customPath) => {
   if (process.platform !== 'win32') return { success: false, error: 'Solo disponible en Windows' };
   try {
-    const success = await installCameraDriver();
-    return { success };
+    const success = await installCameraDriver(customPath || null);
+    if (!success) return { success: false, error: 'No se pudo registrar el driver. ¿Se canceló el prompt de UAC?' };
+    return { success: true };
   } catch (e) {
     return { success: false, error: e.message };
   }
