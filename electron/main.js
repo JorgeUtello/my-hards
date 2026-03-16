@@ -470,8 +470,26 @@ function buildAppMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
+// ── Auto-register OBS VirtualCam driver on startup ───────────────────────────
+async function ensureCameraDriverRegistered() {
+  if (process.platform !== 'win32') return;
+  try {
+    const already = await isCameraDriverInstalled();
+    if (already) return;  // already registered — nothing to do
+
+    const dllPath = findObsDll();
+    if (!dllPath) return;  // DLL not found — skip silently
+
+    // Register silently via PowerShell RunAs (triggers one-time UAC prompt)
+    const escaped = dllPath.replace(/\\/g, '\\\\').replace(/'/g, "''");
+    const psCmd   = `Start-Process regsvr32 -ArgumentList @('/s','${escaped}') -Verb RunAs -Wait`;
+    exec(`powershell -WindowStyle Hidden -Command "${psCmd}"`, { windowsHide: true });
+  } catch (_) {}
+}
+
 // ── App lifecycle ─────────────────────────────────────────────────────────────
 app.whenReady().then(() => {
+  ensureCameraDriverRegistered();   // silent auto-install on first run
   buildAppMenu();
   createWindow();
   app.on('activate', () => {
