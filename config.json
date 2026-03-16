@@ -1,7 +1,7 @@
 {
   "port": 24800,
   "switch_edge": "right",
-  "switch_margin": 10,
+  "switch_margin": 1,
   "client_screen_width": 1920,
   "client_screen_height": 1080,
   "client_pointer_speed": 3,

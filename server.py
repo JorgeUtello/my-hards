@@ -140,6 +140,18 @@ class Server:
         # Start mouse relay polling thread (Barrier-style)
         threading.Thread(target=self._relay_loop, daemon=True).start()
 
+        # Optionally receive webcam stream from client → inject into virtual camera
+        if self.config.get("webcam_share"):
+            from camera_receiver import CameraReceiver
+            self._cam_receiver = CameraReceiver(
+                self.config.get("camera_port", 24801),
+                fps=self.config.get("camera_fps", 15),
+                width=self.config.get("camera_width", 640),
+                height=self.config.get("camera_height", 480),
+            )
+            threading.Thread(target=self._cam_receiver.start, daemon=True).start()
+            log.info("Receptor de cámara iniciado en puerto %d", self.config.get("camera_port", 24801))
+
         # Start input listeners (blocks)
         self._start_listeners()
 
@@ -430,6 +442,8 @@ class Server:
 
     def _cleanup(self):
         self.running = False
+        if hasattr(self, '_cam_receiver'):
+            self._cam_receiver.stop()
         if self.client_sock:
             try:
                 self.client_sock.close()

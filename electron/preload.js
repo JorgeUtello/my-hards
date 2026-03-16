@@ -28,6 +28,10 @@ contextBridge.exposeInMainWorld('api', {
   startClient: (cfg)  => ipcRenderer.invoke('start-client', cfg),
   stopClient:  ()     => ipcRenderer.invoke('stop-client'),
 
+  // Virtual camera driver
+  checkCameraDriver:   () => ipcRenderer.invoke('check-camera-driver'),
+  installCameraDriver: () => ipcRenderer.invoke('install-camera-driver'),
+
   // Events from main → renderer
   onLog:           (cb) => { ipcRenderer.on('log',            (_, m) => cb(m)); },
   onServerStopped: (cb) => { ipcRenderer.on('server-stopped', ()    => cb()); },

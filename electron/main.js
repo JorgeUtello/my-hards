@@ -8,7 +8,7 @@
 
 const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, dialog } = require('electron');
 const path = require('path');
-const { spawn } = require('child_process');
+const { spawn, exec } = require('child_process');
 const fs   = require('fs');
 const os   = require('os');
 
@@ -29,6 +29,12 @@ const DEFAULT_CONFIG = {
   switch_hotkey: '<ctrl>+<alt>+s',
   shared_secret: '',
   last_server_ip: '',
+  // Webcam sharing
+  webcam_share: false,
+  camera_port: 24801,
+  camera_fps: 15,
+  camera_width: 640,
+  camera_height: 480,
 };
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -162,6 +168,50 @@ function attachOutput(proc, prefix) {
   });
 }
 
+// ── Virtual camera driver (Unity Capture) ────────────────────────────────────
+const UNITY_CAPTURE_CLSID = '{8E14549B-DB61-4309-AFA1-3578E927E935}';
+
+function getDriverPath() {
+  const name = 'UnityCapture64.ax';
+  return app.isPackaged
+    ? path.join(process.resourcesPath, 'driver', name)
+    : path.join(__dirname, 'resources', 'driver', name);
+}
+
+function isCameraDriverInstalled() {
+  return new Promise((resolve) => {
+    exec(
+      `reg query "HKCR\\CLSID\\${UNITY_CAPTURE_CLSID}" /ve`,
+      { windowsHide: true },
+      (err) => resolve(!err),
+    );
+  });
+}
+
+function installCameraDriver() {
+  return new Promise((resolve, reject) => {
+    const driverPath = getDriverPath();
+    if (!fs.existsSync(driverPath)) {
+      reject(new Error(
+        `Driver no encontrado en: ${driverPath}\n` +
+        'Descarga UnityCapture64.ax y colócalo en electron/resources/driver/',
+      ));
+      return;
+    }
+    // Use PowerShell + RunAs verb to trigger a UAC elevation prompt
+    const escaped = driverPath.replace(/\\/g, '\\\\').replace(/'/g, "''");
+    const psCmd = `Start-Process regsvr32 -ArgumentList @('/s','${escaped}') -Verb RunAs -Wait -PassThru | Select-Object -ExpandProperty ExitCode`;
+    exec(
+      `powershell -WindowStyle Hidden -Command "${psCmd}"`,
+      { windowsHide: true },
+      (err, stdout) => {
+        if (err) { reject(err); return; }
+        resolve(parseInt(stdout.trim(), 10) === 0);
+      },
+    );
+  });
+}
+
 // ── Window ────────────────────────────────────────────────────────────────────
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -274,6 +324,24 @@ function createTray() {
 ipcMain.handle('get-config',   ()         => loadConfig());
 ipcMain.handle('get-local-ip', ()         => getLocalIp());
 ipcMain.handle('save-config',  (_, cfg)   => { saveConfig(cfg); return true; });
+
+// ── Virtual camera driver IPC ─────────────────────────────────────────────────
+ipcMain.handle('check-camera-driver', async () => {
+  if (process.platform !== 'win32') return { installed: false, supported: false };
+  const installed    = await isCameraDriverInstalled();
+  const driverExists = fs.existsSync(getDriverPath());
+  return { installed, supported: true, driverExists };
+});
+
+ipcMain.handle('install-camera-driver', async () => {
+  if (process.platform !== 'win32') return { success: false, error: 'Solo disponible en Windows' };
+  try {
+    const success = await installCameraDriver();
+    return { success };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});
 
 ipcMain.handle('start-server', (_, cfg) => {
   if (serverProc && serverProc.exitCode === null) return false;

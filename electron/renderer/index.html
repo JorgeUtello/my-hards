@@ -60,6 +60,14 @@
           <div class="hint" id="server-hint">
             IP local: <strong id="local-ip">…</strong>
           </div>
+          <div class="webcam-row">
+            <label class="checkbox-row" style="margin:0;">
+              <input id="server-webcam-toggle" type="checkbox" />
+              Recibir cámara web del cliente
+            </label>
+            <button id="btn-install-driver" class="btn btn-secondary" style="display:none;">Instalar driver</button>
+            <span id="driver-status" class="hint-inline" style="margin-left:6px;"></span>
+          </div>
         </div>
       </div>
 
@@ -77,6 +85,10 @@
             <button id="btn-start-client" class="btn btn-primary">Conectar</button>
             <button id="btn-stop-client"  class="btn btn-danger"  disabled>Desconectar</button>
           </div>
+          <label class="checkbox-row" style="margin-top:10px;">
+            <input id="client-webcam-toggle" type="checkbox" />
+            Compartir mi cámara web con el servidor
+          </label>
         </div>
       </div>
 

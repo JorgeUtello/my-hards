@@ -88,6 +88,19 @@ class Client:
             "screen_h": self.screen_h,
         })
 
+        # Optionally stream local webcam to the server
+        if self.config.get("webcam_share"):
+            from camera_stream import CameraStream
+            self._cam_stream = CameraStream(
+                self.server_ip,
+                self.config.get("camera_port", 24801),
+                fps=self.config.get("camera_fps", 15),
+                width=self.config.get("camera_width", 640),
+                height=self.config.get("camera_height", 480),
+            )
+            threading.Thread(target=self._cam_stream.start, daemon=True).start()
+            log.info("Stream de cámara iniciado")
+
         self._receive_loop()
 
     def _auth_handshake(self) -> bool:
@@ -271,6 +284,8 @@ class Client:
 
     def _cleanup(self):
         self.running = False
+        if hasattr(self, '_cam_stream'):
+            self._cam_stream.stop()
         if self.sock:
             try:
                 self.sock.close()
