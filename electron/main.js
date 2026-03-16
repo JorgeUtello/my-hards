@@ -198,7 +198,10 @@ function findObsDll() {
 
 function isCameraDriverInstalled() {
   return new Promise((resolve) => {
+    // Check HKCU first (per-user registration, no elevation needed),
+    // then fall back to HKCR (system-wide / OBS Studio install).
     exec(
+      `reg query "HKCU\\Software\\Classes\\CLSID\\${OBS_VIRTUALCAM_CLSID}" /ve 2>nul || ` +
       `reg query "HKCR\\CLSID\\${OBS_VIRTUALCAM_CLSID}" /ve`,
       { windowsHide: true },
       (err) => resolve(!err),
@@ -206,8 +209,38 @@ function isCameraDriverInstalled() {
   });
 }
 
-function installCameraDriver(customPath) {
+/**
+ * Register the OBS VirtualCam CLSID directly in HKCU\Software\Classes\CLSID.
+ * HKCU registration is visible to COM and pyvirtualcam without needing UAC.
+ * Uses -EncodedCommand (base64 UTF-16LE) to avoid any quoting issues.
+ */
+function registerDriverInHkcu(dllPath) {
   return new Promise((resolve, reject) => {
+    const psScript = [
+      `$clsid = '${OBS_VIRTUALCAM_CLSID}'`,
+      `$dll   = '${dllPath.replace(/'/g, "''")}'`,
+      `$base  = "HKCU:\\Software\\Classes\\CLSID\\$clsid"`,
+      `New-Item -Path $base -Force | Out-Null`,
+      `Set-ItemProperty -Path $base -Name '(Default)' -Value 'OBS Virtual Camera'`,
+      `New-Item -Path "$base\\InprocServer32" -Force | Out-Null`,
+      `Set-ItemProperty -Path "$base\\InprocServer32" -Name '(Default)' -Value $dll`,
+      `Set-ItemProperty -Path "$base\\InprocServer32" -Name 'ThreadingModel' -Value 'Both'`,
+    ].join('; ');
+    // Encode as UTF-16LE base64 — avoids all shell quoting problems
+    const encoded = Buffer.from(psScript, 'utf16le').toString('base64');
+    exec(
+      `powershell -WindowStyle Hidden -NonInteractive -EncodedCommand ${encoded}`,
+      { windowsHide: true },
+      (err) => {
+        if (err) { reject(err); return; }
+        resolve();
+      },
+    );
+  });
+}
+
+function installCameraDriver(customPath) {
+  return new Promise(async (resolve, reject) => {
     const driverPath = customPath || findObsDll();
     if (!driverPath) {
       reject(new Error(
@@ -219,21 +252,13 @@ function installCameraDriver(customPath) {
       ));
       return;
     }
-    // Use PowerShell + RunAs verb to trigger a UAC elevation prompt.
-    // Do NOT use -PassThru | Select-Object ExitCode — it fails with elevated processes.
-    // Instead, fire-and-wait then verify via registry.
-    const escaped = driverPath.replace(/\\/g, '\\\\').replace(/'/g, "''");
-    const psCmd = `Start-Process regsvr32 -ArgumentList @('/s','${escaped}') -Verb RunAs -Wait`;
-    exec(
-      `powershell -WindowStyle Hidden -Command "${psCmd}"`,
-      { windowsHide: true },
-      async (err) => {
-        if (err) { reject(err); return; }
-        // Verify by checking if the CLSID is now in the registry
-        const registered = await isCameraDriverInstalled();
-        resolve(registered);
-      },
-    );
+    try {
+      await registerDriverInHkcu(driverPath);
+      const registered = await isCameraDriverInstalled();
+      resolve(registered);
+    } catch (e) {
+      reject(e);
+    }
   });
 }
 
@@ -497,10 +522,8 @@ async function ensureCameraDriverRegistered() {
     const dllPath = findObsDll();
     if (!dllPath) return;  // DLL not found — skip silently
 
-    // Register silently via PowerShell RunAs (triggers one-time UAC prompt)
-    const escaped = dllPath.replace(/\\/g, '\\\\').replace(/'/g, "''");
-    const psCmd   = `Start-Process regsvr32 -ArgumentList @('/s','${escaped}') -Verb RunAs -Wait`;
-    exec(`powershell -WindowStyle Hidden -Command "${psCmd}"`, { windowsHide: true });
+    // Register directly in HKCU — no UAC needed, COM sees it immediately.
+    await registerDriverInHkcu(dllPath);
   } catch (_) {}
 }
 
