@@ -168,11 +168,12 @@ function attachOutput(proc, prefix) {
   });
 }
 
-// ── Virtual camera driver (Unity Capture) ────────────────────────────────────
-const UNITY_CAPTURE_CLSID = '{8E14549B-DB61-4309-AFA1-3578E927E935}';
+// ── Virtual camera driver (OBS VirtualCam) ─────────────────────────────────
+// CLSID of the OBS VirtualCam DirectShow filter (64-bit)
+const OBS_VIRTUALCAM_CLSID = '{A3FCE0F5-3493-419F-958A-ABA1283EFE48}';
 
 function getDriverPath() {
-  const name = 'UnityCapture64.ax';
+  const name = 'obs-virtualcam-module64.dll';
   return app.isPackaged
     ? path.join(process.resourcesPath, 'driver', name)
     : path.join(__dirname, 'resources', 'driver', name);
@@ -181,7 +182,7 @@ function getDriverPath() {
 function isCameraDriverInstalled() {
   return new Promise((resolve) => {
     exec(
-      `reg query "HKCR\\CLSID\\${UNITY_CAPTURE_CLSID}" /ve`,
+      `reg query "HKCR\\CLSID\\${OBS_VIRTUALCAM_CLSID}" /ve`,
       { windowsHide: true },
       (err) => resolve(!err),
     );
@@ -194,7 +195,7 @@ function installCameraDriver() {
     if (!fs.existsSync(driverPath)) {
       reject(new Error(
         `Driver no encontrado en: ${driverPath}\n` +
-        'Descarga UnityCapture64.ax y colócalo en electron/resources/driver/',
+        'Descarga obs-virtualcam-module64.dll y colócalo en electron/resources/driver/',
       ));
       return;
     }

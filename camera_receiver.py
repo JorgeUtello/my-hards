@@ -84,7 +84,7 @@ class CameraReceiver:
             try:
                 with _pyvirtualcam.Camera(
                     width=self.width, height=self.height,
-                    fps=self.fps, backend='unitycapture',
+                    fps=self.fps, backend='obs',
                 ) as cam:
                     log.info("Cámara virtual activa: %s", cam.device)
 

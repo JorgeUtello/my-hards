@@ -9,5 +9,10 @@
   "heartbeat_interval": 1,
   "switch_hotkey": "<ctrl>+<alt>+s",
   "shared_secret": "1234",
-  "last_server_ip": "192.168.0.35"
+  "last_server_ip": "192.168.0.35",
+  "webcam_share": true,
+  "camera_port": 24801,
+  "camera_fps": 15,
+  "camera_width": 640,
+  "camera_height": 480
 }
