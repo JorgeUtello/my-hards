@@ -23,12 +23,6 @@ DEFAULT_CONFIG = {
     "switch_hotkey": "<ctrl>+<alt>+s",
     "shared_secret": "",
     "last_server_ip": "",
-    # Webcam sharing (client streams → server injects into virtual camera)
-    "webcam_share": False,
-    "camera_port": 24801,
-    "camera_fps": 15,
-    "camera_width": 640,
-    "camera_height": 480,
 }
 
 _config_cache: dict | None = None

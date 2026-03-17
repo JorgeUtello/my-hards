@@ -8,6 +8,3 @@ key.pem
 electron/node_modules/
 electron/package-lock.json
 bash.exe.stackdump
-# Third-party driver binary (place manually — see electron/resources/driver/README.md)
-electron/resources/driver/*.dll
-electron/resources/driver/*.ax

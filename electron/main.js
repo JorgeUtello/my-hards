@@ -8,7 +8,7 @@
 
 const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, dialog } = require('electron');
 const path = require('path');
-const { spawn, exec } = require('child_process');
+const { spawn } = require('child_process');
 const fs   = require('fs');
 const os   = require('os');
 
@@ -29,12 +29,6 @@ const DEFAULT_CONFIG = {
   switch_hotkey: '<ctrl>+<alt>+s',
   shared_secret: '',
   last_server_ip: '',
-  // Webcam sharing
-  webcam_share: false,
-  camera_port: 24801,
-  camera_fps: 15,
-  camera_width: 640,
-  camera_height: 480,
 };
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -168,100 +162,6 @@ function attachOutput(proc, prefix) {
   });
 }
 
-// ── Virtual camera driver (OBS VirtualCam) ─────────────────────────────────
-// CLSID of the OBS VirtualCam DirectShow filter (64-bit)
-const OBS_VIRTUALCAM_CLSID = '{A3FCE0F5-3493-419F-958A-ABA1283EFE48}';
-const OBS_DLL_NAME          = 'obs-virtualcam-module64.dll';
-
-// Locations to search for the DLL, in priority order:
-// 1. Bundled inside the app (electron/resources/driver/)
-// 2. OBS Studio already installed on the system
-const OBS_DLL_SEARCH_PATHS = [
-  // Bundled
-  app.isPackaged
-    ? path.join(process.resourcesPath, 'driver', OBS_DLL_NAME)
-    : path.join(__dirname, 'resources', 'driver', OBS_DLL_NAME),
-  // OBS installed — standard locations
-  path.join('C:\\', 'Program Files', 'obs-studio', 'data', 'obs-plugins', 'win-dshow', OBS_DLL_NAME),
-  path.join('C:\\', 'Program Files (x86)', 'obs-studio', 'data', 'obs-plugins', 'win-dshow', OBS_DLL_NAME),
-  // OBS from winget / MSIX sometimes installs to LocalAppData
-  path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'obs-studio', 'data', 'obs-plugins', 'win-dshow', OBS_DLL_NAME),
-];
-
-/** Return the first path where the DLL actually exists, or null. */
-function findObsDll() {
-  for (const p of OBS_DLL_SEARCH_PATHS) {
-    if (fs.existsSync(p)) return p;
-  }
-  return null;
-}
-
-function isCameraDriverInstalled() {
-  return new Promise((resolve) => {
-    // Check HKCU first (per-user registration, no elevation needed),
-    // then fall back to HKCR (system-wide / OBS Studio install).
-    exec(
-      `reg query "HKCU\\Software\\Classes\\CLSID\\${OBS_VIRTUALCAM_CLSID}" /ve 2>nul || ` +
-      `reg query "HKCR\\CLSID\\${OBS_VIRTUALCAM_CLSID}" /ve`,
-      { windowsHide: true },
-      (err) => resolve(!err),
-    );
-  });
-}
-
-/**
- * Register the OBS VirtualCam CLSID directly in HKCU\Software\Classes\CLSID.
- * HKCU registration is visible to COM and pyvirtualcam without needing UAC.
- * Uses -EncodedCommand (base64 UTF-16LE) to avoid any quoting issues.
- */
-function registerDriverInHkcu(dllPath) {
-  return new Promise((resolve, reject) => {
-    const psScript = [
-      `$clsid = '${OBS_VIRTUALCAM_CLSID}'`,
-      `$dll   = '${dllPath.replace(/'/g, "''")}'`,
-      `$base  = "HKCU:\\Software\\Classes\\CLSID\\$clsid"`,
-      `New-Item -Path $base -Force | Out-Null`,
-      `Set-ItemProperty -Path $base -Name '(Default)' -Value 'OBS Virtual Camera'`,
-      `New-Item -Path "$base\\InprocServer32" -Force | Out-Null`,
-      `Set-ItemProperty -Path "$base\\InprocServer32" -Name '(Default)' -Value $dll`,
-      `Set-ItemProperty -Path "$base\\InprocServer32" -Name 'ThreadingModel' -Value 'Both'`,
-    ].join('; ');
-    // Encode as UTF-16LE base64 — avoids all shell quoting problems
-    const encoded = Buffer.from(psScript, 'utf16le').toString('base64');
-    exec(
-      `powershell -WindowStyle Hidden -NonInteractive -EncodedCommand ${encoded}`,
-      { windowsHide: true },
-      (err) => {
-        if (err) { reject(err); return; }
-        resolve();
-      },
-    );
-  });
-}
-
-function installCameraDriver(customPath) {
-  return new Promise(async (resolve, reject) => {
-    const driverPath = customPath || findObsDll();
-    if (!driverPath) {
-      reject(new Error(
-        'No se encontró obs-virtualcam-module64.dll.\n\n' +
-        'Opciones:\n' +
-        '1. Instala OBS Studio (obsproject.com) — el driver se detectará automáticamente.\n' +
-        '2. Copia obs-virtualcam-module64.dll a electron/resources/driver/\n' +
-        '3. Usa el botón "Buscar DLL…" para seleccionarlo manualmente.',
-      ));
-      return;
-    }
-    try {
-      await registerDriverInHkcu(driverPath);
-      const registered = await isCameraDriverInstalled();
-      resolve(registered);
-    } catch (e) {
-      reject(e);
-    }
-  });
-}
-
 // ── Window ────────────────────────────────────────────────────────────────────
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -375,36 +275,6 @@ ipcMain.handle('get-config',   ()         => loadConfig());
 ipcMain.handle('get-local-ip', ()         => getLocalIp());
 ipcMain.handle('save-config',  (_, cfg)   => { saveConfig(cfg); return true; });
 
-// ── Virtual camera driver IPC ─────────────────────────────────────────────────
-ipcMain.handle('check-camera-driver', async () => {
-  if (process.platform !== 'win32') return { installed: false, supported: false };
-  const installed   = await isCameraDriverInstalled();
-  const dllPath     = findObsDll();
-  return { installed, supported: true, driverExists: !!dllPath, dllPath };
-});
-
-ipcMain.handle('browse-driver-dll', async () => {
-  const result = await dialog.showOpenDialog(mainWindow, {
-    title: 'Seleccionar obs-virtualcam-module64.dll',
-    defaultPath: 'C:\\Program Files\\obs-studio',
-    filters: [{ name: 'DLL de OBS VirtualCam', extensions: ['dll'] }],
-    properties: ['openFile'],
-  });
-  if (result.canceled || !result.filePaths.length) return null;
-  return result.filePaths[0];
-});
-
-ipcMain.handle('install-camera-driver', async (_, customPath) => {
-  if (process.platform !== 'win32') return { success: false, error: 'Solo disponible en Windows' };
-  try {
-    const success = await installCameraDriver(customPath || null);
-    if (!success) return { success: false, error: 'No se pudo registrar el driver. ¿Se canceló el prompt de UAC?' };
-    return { success: true };
-  } catch (e) {
-    return { success: false, error: e.message };
-  }
-});
-
 ipcMain.handle('start-server', (_, cfg) => {
   if (serverProc && serverProc.exitCode === null) return false;
   saveConfig(cfg);
@@ -512,24 +382,8 @@ function buildAppMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
-// ── Auto-register OBS VirtualCam driver on startup ───────────────────────────
-async function ensureCameraDriverRegistered() {
-  if (process.platform !== 'win32') return;
-  try {
-    const already = await isCameraDriverInstalled();
-    if (already) return;  // already registered — nothing to do
-
-    const dllPath = findObsDll();
-    if (!dllPath) return;  // DLL not found — skip silently
-
-    // Register directly in HKCU — no UAC needed, COM sees it immediately.
-    await registerDriverInHkcu(dllPath);
-  } catch (_) {}
-}
-
 // ── App lifecycle ─────────────────────────────────────────────────────────────
 app.whenReady().then(() => {
-  ensureCameraDriverRegistered();   // silent auto-install on first run
   buildAppMenu();
   createWindow();
   app.on('activate', () => {

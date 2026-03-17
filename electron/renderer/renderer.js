@@ -32,14 +32,6 @@ const btnStartClient = $('btn-start-client');
 const btnStopClient  = $('btn-stop-client');
 const btnSaveConfig  = $('btn-save-config');
 const btnResetConfig = $('btn-reset-config');
-const btnCopyLog     = $('btn-copy-log');
-
-// Webcam sharing controls
-const serverWebcamToggle = $('server-webcam-toggle');
-const clientWebcamToggle = $('client-webcam-toggle');
-const btnInstallDriver   = $('btn-install-driver');
-const btnBrowseDll       = $('btn-browse-dll');
-const driverStatus       = $('driver-status');
 
 // Titlebar controls
 const btnWinMinimize  = $('btn-win-minimize');
@@ -132,11 +124,6 @@ function configFromUi() {
     switch_hotkey:         cfgHotkey.value.trim() || '<ctrl>+<alt>+s',
     shared_secret:         cfgSecret.value.trim(),
     last_server_ip:        inputIp.value.trim(),
-    webcam_share:          serverWebcamToggle.checked,
-    camera_port:           config.camera_port || 24801,
-    camera_fps:            config.camera_fps  || 15,
-    camera_width:          config.camera_width  || 640,
-    camera_height:         config.camera_height || 480,
   };
 }
 
@@ -149,8 +136,6 @@ function applyConfigToUi(cfg) {
   cfgHotkey.value    = cfg.switch_hotkey ?? '<ctrl>+<alt>+s';
   cfgSecret.value    = cfg.shared_secret ?? '';
   cfgClipboard.checked = cfg.clipboard_sync !== false;
-  serverWebcamToggle.checked = cfg.webcam_share === true;
-  clientWebcamToggle.checked = cfg.webcam_share === true;
   if (cfg.last_server_ip) inputIp.value = cfg.last_server_ip;
 }
 
@@ -168,71 +153,6 @@ tabBtns.forEach(btn => btn.addEventListener('click', () => activateTab(btn.datas
 // Enter on IP field triggers connect
 inputIp.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') btnStartClient.click();
-});
-
-// ── Webcam sharing ─────────────────────────────────────────────────────────────────
-let _driverInstalled = false;
-let _customDllPath   = null;   // manually selected DLL path
-
-async function updateDriverUi(webcamEnabled) {
-  if (!webcamEnabled) {
-    btnInstallDriver.style.display = 'none';
-    btnBrowseDll.style.display = 'none';
-    driverStatus.textContent = '';
-    return;
-  }
-  if (_driverInstalled) {
-    btnInstallDriver.style.display = 'none';
-    btnBrowseDll.style.display = 'none';
-    driverStatus.textContent = '✓ Driver listo';
-    driverStatus.style.color = 'var(--green)';
-  } else {
-    btnInstallDriver.style.display = '';
-    btnBrowseDll.style.display = '';
-    btnInstallDriver.disabled = false;
-    btnInstallDriver.textContent = 'Instalar driver';
-    driverStatus.textContent = _customDllPath
-      ? `DLL: …${_customDllPath.slice(-32)}`
-      : 'Driver no instalado';
-    driverStatus.style.color = _customDllPath ? 'var(--fg)' : 'var(--accent)';
-  }
-}
-
-// Both toggles always stay in sync (same webcam_share config key)
-serverWebcamToggle.addEventListener('change', () => {
-  clientWebcamToggle.checked = serverWebcamToggle.checked;
-  updateDriverUi(serverWebcamToggle.checked);
-});
-clientWebcamToggle.addEventListener('change', () => {
-  serverWebcamToggle.checked = clientWebcamToggle.checked;
-  updateDriverUi(clientWebcamToggle.checked);
-});
-
-btnInstallDriver.addEventListener('click', async () => {
-  btnInstallDriver.disabled = true;
-  btnInstallDriver.textContent = 'Instalando…';
-  log('Instalando driver de cámara virtual (se requiere permisos de administrador)…');
-  const result = await window.api.installCameraDriver(_customDllPath);
-  if (result.success) {
-    _driverInstalled = true;
-    _customDllPath = null;
-    log('Driver de cámara virtual instalado correctamente');
-    updateDriverUi(true);
-  } else {
-    log(`Error instalando driver: ${result.error || 'desconocido'}`);
-    btnInstallDriver.disabled = false;
-    btnInstallDriver.textContent = 'Instalar driver';
-  }
-});
-
-btnBrowseDll.addEventListener('click', async () => {
-  const chosen = await window.api.browseDriverDll();
-  if (!chosen) return;
-  _customDllPath = chosen;
-  log(`DLL seleccionada manualmente: ${chosen}`);
-  updateDriverUi(true);   // stays in not-installed state but shows DLL path
-  _driverInstalled = false;
-  updateDriverUi(serverWebcamToggle.checked);
 });
 
 // ── Button handlers ───────────────────────────────────────────────────────────
@@ -264,14 +184,6 @@ btnStopClient.addEventListener('click', async () => {
   log('Desconectando cliente…');
   btnStopClient.disabled = true;
   await window.api.stopClient();
-});
-
-btnCopyLog.addEventListener('click', () => {
-  navigator.clipboard.writeText(logText).then(() => {
-    const orig = btnCopyLog.textContent;
-    btnCopyLog.textContent = '¡Copiado!';
-    setTimeout(() => { btnCopyLog.textContent = orig; }, 1500);
-  });
 });
 
 btnSaveConfig.addEventListener('click', async () => {
@@ -337,24 +249,14 @@ window.api.onMenuTab((tab) => activateTab(tab));
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 (async () => {
-  const [ip, cfg, driverInfo] = await Promise.all([
+  const [ip, cfg] = await Promise.all([
     window.api.getLocalIp(),
     window.api.getConfig(),
-    window.api.checkCameraDriver(),
   ]);
   config._localIp = ip;
   config = { ...cfg, _localIp: ip };
   localIpEl.textContent = ip;
   applyConfigToUi(cfg);
   updateStatusBar();
-
-  _driverInstalled = driverInfo.installed ?? false;
-  if (cfg.webcam_share) updateDriverUi(true);
-  if (driverInfo.supported && !driverInfo.driverExists) {
-    log('Aviso: obs-virtualcam-module64.dll no encontrado. Instala OBS Studio o cópialo manualmente.');
-  } else if (driverInfo.supported && driverInfo.dllPath && !driverInfo.installed) {
-    log(`Driver OBS encontrado en: ${driverInfo.dllPath} — haz clic en "Instalar driver" para activarlo.`);
-  }
-
   log('myHards listo.');
 })();
