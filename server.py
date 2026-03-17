@@ -24,11 +24,33 @@ except ImportError:
     _pyperclip = None
 
 from pynput import mouse, keyboard
+from pynput._util.win32 import SystemHook
 
 from protocol import (MessageType, encode_message, encode_mouse_move, recv_message,
                       ensure_certs, create_tls_context_server)
 from config import load_config, CERT_FILE, KEY_FILE
 from input_utils import get_screen_size, is_at_edge
+
+# Windows mouse messages used in the low-level hook filter
+_WM_MOUSEMOVE    = 0x0200
+_WM_LBUTTONDOWN  = 0x0201
+_WM_LBUTTONUP    = 0x0202
+_WM_RBUTTONDOWN  = 0x0204
+_WM_RBUTTONUP    = 0x0205
+_WM_MBUTTONDOWN  = 0x0207
+_WM_MBUTTONUP    = 0x0208
+_WM_MOUSEWHEEL   = 0x020A
+_WM_MOUSEHWHEEL  = 0x020E
+_WHEEL_DELTA     = 120
+
+_CLICK_MSG_MAP = {
+    _WM_LBUTTONDOWN: ("left", True),
+    _WM_LBUTTONUP:   ("left", False),
+    _WM_RBUTTONDOWN: ("right", True),
+    _WM_RBUTTONUP:   ("right", False),
+    _WM_MBUTTONDOWN: ("middle", True),
+    _WM_MBUTTONUP:   ("middle", False),
+}
 
 logging.basicConfig(
     level=logging.INFO,
@@ -78,6 +100,10 @@ class Server:
 
         # Cursor visibility counter (ShowCursor is ref-counted)
         self._cursor_hidden = False
+
+        # Listener references (set in _start_listeners)
+        self._mouse_listener = None
+        self._key_listener = None
 
         log.info(
             "Screen: %dx%d | Edge: %s | Port: %d",
@@ -246,6 +272,9 @@ class Server:
         if self.active:
             return
         self.active = True
+        # Suppress keyboard events on the server while input goes to client
+        if self._key_listener:
+            self._key_listener._suppress = True
         log.info("→ Switched to CLIENT")
         self._send(MessageType.SWITCH_TO_CLIENT, {
             "edge": self.switch_edge,
@@ -259,6 +288,9 @@ class Server:
         if not self.active:
             return
         self.active = False
+        # Re-enable local keyboard input on the server
+        if self._key_listener:
+            self._key_listener._suppress = False
         self._show_cursor()
 
         # Map client cursor position proportionally onto server screen
@@ -339,22 +371,66 @@ class Server:
 
     # ── Input capture ───────────────────────────────────────────────
 
+    # ── Mouse event filter (selective suppression) ──────────────────
+
+    def _mouse_event_filter(self, msg, data):
+        """Low-level mouse hook filter.
+
+        When active (input goes to client), suppress click and scroll events
+        on the server (forwarding them to the client here) while letting
+        mouse-move events through so the relay loop can compute deltas.
+        """
+        if not self.active:
+            return True  # not relaying — let everything through
+
+        # Mouse move: DON'T suppress (relay_loop needs cursor movement)
+        if msg == _WM_MOUSEMOVE:
+            return True
+
+        # Click events
+        click = _CLICK_MSG_MAP.get(msg)
+        if click:
+            btn, pressed = click
+            self._send(MessageType.MOUSE_CLICK, {
+                "button": btn, "pressed": pressed,
+            })
+            raise SystemHook.SuppressException()
+
+        # Vertical scroll
+        if msg == _WM_MOUSEWHEEL:
+            delta = wintypes.SHORT(data.mouseData >> 16).value
+            dy = delta // _WHEEL_DELTA
+            if dy:
+                self._send(MessageType.MOUSE_SCROLL, {"dx": 0, "dy": dy})
+            raise SystemHook.SuppressException()
+
+        # Horizontal scroll
+        if msg == _WM_MOUSEHWHEEL:
+            delta = wintypes.SHORT(data.mouseData >> 16).value
+            dx = delta // _WHEEL_DELTA
+            if dx:
+                self._send(MessageType.MOUSE_SCROLL, {"dx": dx, "dy": 0})
+            raise SystemHook.SuppressException()
+
+        return True  # unknown message — pass through
+
     def _start_listeners(self):
         """Start mouse & keyboard listeners (runs in current thread context)."""
-        mouse_listener = mouse.Listener(
+        self._mouse_listener = mouse.Listener(
             on_move=self._on_mouse_move,
             on_click=self._on_mouse_click,
             on_scroll=self._on_mouse_scroll,
+            event_filter=self._mouse_event_filter,
         )
-        key_listener = keyboard.Listener(
+        self._key_listener = keyboard.Listener(
             on_press=self._on_key_press,
             on_release=self._on_key_release,
         )
         hotkey_str = self.config.get("switch_hotkey", "<ctrl>+<alt>+s")
         hotkey_listener = keyboard.GlobalHotKeys({hotkey_str: self._on_hotkey})
 
-        mouse_listener.start()
-        key_listener.start()
+        self._mouse_listener.start()
+        self._key_listener.start()
         hotkey_listener.start()
         log.info("Input capture active. Hotkey: %s | Ctrl+Alt+Q to quit.", hotkey_str)
 
@@ -366,8 +442,8 @@ class Server:
             pass
         finally:
             self._show_cursor()
-            mouse_listener.stop()
-            key_listener.stop()
+            self._mouse_listener.stop()
+            self._key_listener.stop()
             hotkey_listener.stop()
             self._cleanup()
 
